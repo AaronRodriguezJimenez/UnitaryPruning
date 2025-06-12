@@ -10,6 +10,15 @@ using LinearAlgebra
 using PauliOperators
 
 
+function clip_majorana_weight!(p::Dict{PauliBasis{N}, T}; max_length=4) where {N, T<:Number}
+    filter!((k,v) -> PauliOperators.simple_majorana_weight(v) < max_length, p)
+end
+
+function clip_pauli_weight!(p::Dict{PauliBasis{N}, T}; max_length=4) where {N, T<:Number}
+    filter!((k,v) -> PauliOperators.pauli_weight(v) < max_length, p)
+end
+
+
 """
  This function removes small terms (based on their magnitude) from a PauliSum, which is represented as a dictionary
 """
@@ -85,7 +94,7 @@ end
    bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::Pauli{N}, ket ; thres=1e-3) where {N}
 
 """
-function bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket ; thresh=1e-3) where {N}
+function bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket ; max_m_weight=4) where {N}
 
     #
     # for a single pauli Unitary, U = exp(-i θn Pn/2)
@@ -119,8 +128,8 @@ function bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}
             #print(PauliOperators.string(oi))
             #println(PauliOperators.pauli_to_majorana_occupation(oi))
             
-            majo_weight = PauliOperators.pauli_to_majorana_occupation(oi)[1]
-            majo_weight <= majo_thresh || continue
+            # majo_weight = PauliOperators.pauli_to_majorana_occupation(oi)[1]
+            # majo_weight <= majo_thresh || continue
             #abs(coeff) > thresh || continue
 
             if PauliOperators.commute(oi, PauliBasis(g)) == false
@@ -133,13 +142,17 @@ function bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}
 
                 # sin branch
                 oj = g * oi    # multiply the pauli's
+                if PauliOperators.simple_majorana_weight(oj) > max_m_weight
+                    println("m weight larger than max")
+                    continue
+                end
                 sum!(sin_branch, oj * vsin[t] * coeff * 1im)
 
             end
         end
         sum!(o_transformed, sin_branch) 
         #clip_thresh!(o_transformed, thresh=thresh)
-        clip_weight!(o_transformed, weight=majo_thresh)
+        # clip_weight!(o_transformed, weight=majo_thresh)
         n_ops[t] = length(o_transformed)
     end
 
@@ -156,7 +169,7 @@ end
 #   exp(i θ/2 (-X)) exp(i π/4 ZZ)
 #
 
-function run(; N=6, k=10, thresh=1e-3)
+function run(; N=6, k=10, max_weight=4)
    
     ket = Ket(N, 0) 
     o = Pauli(N, Z=[1])
@@ -173,7 +186,7 @@ function run(; N=6, k=10, thresh=1e-3)
         #    println("Generator :", j, " ", PauliBasis(g))
         #end
 
-        ei , nops = bfs_evolution_test(generators, parameters, PauliSum(o), ket, thresh=thresh)
+        ei , nops = bfs_evolution_test(generators, parameters, PauliSum(o), ket, max_m_weight=max_weight)
       
         push!(e, ei)
         push!(angles, α)
@@ -190,4 +203,4 @@ function run(; N=6, k=10, thresh=1e-3)
     return e
 end
 
-@time v,e = run(k=2, N=6, thresh=.5e-4);
+@time v,e = run(k=6, N=6, max_weight=4);
