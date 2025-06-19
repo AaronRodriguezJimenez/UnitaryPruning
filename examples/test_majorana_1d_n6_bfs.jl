@@ -80,7 +80,7 @@ function get_unitary_sequence_1D_test(o::Pauli{N}; α=.01, k=10) where N
             pi = Pauli(N, X=[i])
             #println("Change... Aaron was here")
             #pi = Pauli{N}((pi.θ + 2)%4, pi.pauli) # this accounts for the fact that the papers have -X and positive ZZ
-            pi = Pauli{N}(-pi.s, pi.z, pi.x) #Changed due to change in Pauli type?
+            pi = Pauli{N}(-pi.s, pi.z, pi.x)
             push!(generators, pi)
             push!(parameters, α)
         end
@@ -94,7 +94,7 @@ end
    bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::Pauli{N}, ket ; thres=1e-3) where {N}
 
 """
-function bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket ; max_m_weight=4) where {N}
+function bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket ; max_m_weight=max_m_weight) where {N}
 
     #
     # for a single pauli Unitary, U = exp(-i θn Pn/2)

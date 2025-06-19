@@ -139,3 +139,73 @@ function bfs_evolution(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket
 end
 
 
+"""
+    bfs_evolution(generators::Vector{Pauli{N}}, angles, o::Pauli{N}, ket ; thres=1e-3) where {N}
+    Based on max_weight. This function avoids the use of a clipping function.
+
+"""
+function bfs_evolution_weight(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket , w_type::String ; max_weight=4) where {N}
+#
+    # for a single pauli Unitary, U = exp(-i θn Pn/2)
+    # U' O U = cos(θ) O + i sin(θ) OP
+    nt = length(angles)
+    length(angles) == nt || throw(DimensionMismatch)
+    
+    vcos = cos.(angles)
+    vsin = sin.(angles)
+
+    # collect our results here...
+    expval = zero(ComplexF64)
+
+    o_transformed = deepcopy(o)
+  
+    n_ops = zeros(Int,nt)
+
+    for t in 1:nt
+
+        g = generators[t]
+        
+        sin_branch = PauliSum(N)
+
+        for (oi, coeff) in o_transformed#.ops
+            #println("coeff ", coeff, " oi: ", oi, "generator ", PauliBasis(g))
+            
+
+            if PauliOperators.commute(oi, PauliBasis(g)) == false
+            
+                # cos branch
+                o_transformed[oi] = coeff * vcos[t]
+
+                # sin branch
+                oj = g * oi    # multiply the pauli's
+
+                if w_type == "Majorana"
+                    if PauliOperators.simple_majorana_weight(oj) > max_weight
+                        #println("Majorana weight larger than max...")
+                        continue
+                    end
+                elseif w_type == "Pauli"
+                        if PauliOperators.pauli_weight(oj) > max_weight
+                          #  println("Pauli weight larger than max...")
+                            continue
+                        end
+                    else
+                        error("Unknown weight type: $w_type")
+                end
+
+                sum!(sin_branch, oj * vsin[t] * coeff * 1im)
+
+            end
+        end
+        sum!(o_transformed, sin_branch) 
+        #clip_thresh!(o_transformed, thresh=thresh)
+        # clip_weight!(o_transformed, weight=majo_thresh)
+        n_ops[t] = length(o_transformed)
+    end
+
+    for (oi,coeff) in o_transformed#.ops
+        expval += coeff*expectation_value(oi, ket)
+    end
+   
+    return expval, n_ops
+end
