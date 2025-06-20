@@ -144,7 +144,7 @@ end
     Based on max_weight. This function avoids the use of a clipping function.
 
 """
-function bfs_evolution_weight(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket , w_type::String ; max_weight=4) where {N}
+function bfs_evolution_weight(generators::Union{Vector{Pauli{N}},Vector{PauliBasis{N}}}, angles, o::PauliSum{N}, ket , w_type::String ; max_weight=4) where {N}
 #
     # for a single pauli Unitary, U = exp(-i θn Pn/2)
     # U' O U = cos(θ) O + i sin(θ) OP

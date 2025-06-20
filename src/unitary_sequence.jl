@@ -72,7 +72,7 @@ end
 
 
 
-function build_time_evolution_matrix(generators::Vector{Pauli{N}}, angles::Vector) where N
+function build_time_evolution_matrix(generators::Union{Vector{Pauli{N}}, Vector{PauliBasis{N}}}, angles::Vector) where N
     U = Matrix(Pauli(N))
     nt = length(generators)
     length(angles) == nt || throw(DimensionMismatch)

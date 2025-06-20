@@ -1,3 +1,12 @@
+using Distributed
+using UnitaryPruning
+using Plots
+using Statistics
+using Printf
+using Random
+using LinearAlgebra
+using PauliOperators
+
 #
 #- - - 1D Hubbard model 
 #
@@ -109,6 +118,7 @@ end
 function run(; N = 4, w_type = "Majorana", max_weight=1)
 
     ket = Ket(N,0)
+    println("Ket: ", ket)
     o = Pauli(N, Z=[1])
 
     #Create generators and parameters for the model
@@ -155,4 +165,4 @@ function plot_abs_error_vs_weight_pdf(; N=4, w_type="Pauli", max_weights=0:2:6)
     println("Plot saved as $filename")
 end
     
-plot_abs_error_vs_weight_pdf(N=12, w_type="Majorana", max_weights=1:2:12)
+plot_abs_error_vs_weight_pdf(N=12, w_type="Pauli", max_weights=1:2:12)

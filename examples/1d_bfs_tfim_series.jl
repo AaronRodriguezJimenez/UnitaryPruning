@@ -58,7 +58,7 @@ function run(; N=10, k=6, w_type = "Majorana", max_weight=1)
    
     ket = Ket(N, 0) 
     o = Pauli(N, Z=[1])
-    α = 1.0# π / 32 
+    α = 1.0   # π / 32 
     
     # Generators and parameters for a single angle
     generators, parameters = get_unitary_sequence_1D_test(o, α=α, k=k)
