@@ -84,3 +84,28 @@ function build_time_evolution_matrix(generators::Union{Vector{Pauli{N}}, Vector{
 
     return U 
 end
+
+function build_time_evolution_matrix_fast(generators::Vector{Pauli{N}}, angles::Vector{<:Real}) where N
+    nt = length(generators)
+    length(angles) == nt || throw(DimensionMismatch())
+
+    # Start with identity matrix of size 2^N × 2^N
+    U = Matrix{ComplexF64}(I, 2^N, 2^N)
+    W = Matrix{ComplexF64}(undef, 2^N, 2^N)  # workspace to avoid allocs
+
+    for t in 1:nt
+        α = angles[t]
+        Pmat = Matrix(generators[t])  # convert Pauli to matrix
+
+        # Use in-place multiplication: W = U * P
+        mul!(W, U, Pmat)
+
+        # Update U in-place: U = cos(α/2)*U - i*sin(α/2)*W
+        c, s = cos(α / 2), sin(α / 2)
+        @inbounds @simd for i in eachindex(U)
+            U[i] = c * U[i] - 1im * s * W[i]
+        end
+    end
+
+    return U
+end

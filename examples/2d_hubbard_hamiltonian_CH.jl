@@ -1,6 +1,6 @@
 #
-#  Here we explore the performance of the Majorana vs Pauli weight-based pruning in for the case of the
-#  2D Hubbard model.
+#  Here we check the eigenspectrum of the version provided
+#  by Chinmay, and based on a different version of PauliOperators
 #
 function jw_transform(o::Pauli{N}, site) where N
     z_string = [i for i in 1:site-1]
@@ -15,10 +15,12 @@ function fermi_hubbard_2D(o::Pauli{N}; t, U, k) where N
     generators = Vector{Pauli{N}}()
     parameters = Vector{Float64}()
     t_term = PauliSum(N)
+    u_term = PauliSum(N)
     up(j) = 2*j - 1
     dn(j) = 2*j
     linear_index(x, y) = (x-1)*L + y
     for ki in 1:k
+        t_term = PauliSum(N)
         for x in 1:L
             for y in 1:L
                 j = linear_index(x, y)
@@ -52,7 +54,7 @@ function fermi_hubbard_2D(o::Pauli{N}; t, U, k) where N
                 end
             end
         end
-        for (pauli, coeff) in t_term.ops
+        for (pauli, coeff) in t_term
             push!(generators, Pauli(pauli))
             push!(parameters, -t*coeff)
         end
@@ -65,10 +67,35 @@ function fermi_hubbard_2D(o::Pauli{N}; t, U, k) where N
             # println("Interaction")
             # display(u_term)
         end
-        for (pauli, coeff) in u_term.ops
+        for (pauli, coeff) in u_term
             push!(generators, Pauli(pauli))
             push!(parameters, U*coeff)
         end
     end
-    return generators, parameters
+    return generators, parameters, -t*t_term + U*u_term
 end
+
+# Check eigenspectrum
+function hubbard_2d_eigenspectrum()
+    N = 2
+    N = 2*N*N
+    k = 1
+    o = Pauli(N, Z=[1])
+    t = 1
+    U = 4
+    generators, parameters, hammy = fermi_hubbard_2D(o, t = t, U = U, k = k)
+    e, v = eigen(Matrix(hammy))
+    println("CHINMAY WAS HERE...")
+    for eig in e
+        println(eig)
+    end
+    filename = "2D_Hubbard_eigenspectrum_t$t-U$U-Chinmay.txt"
+    open(filename, "w") do f
+        for item in e
+            println(f, item)
+        end
+    end
+    return
+end
+
+hubbard_2d_eigenspectrum()

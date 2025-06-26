@@ -209,3 +209,87 @@ function bfs_evolution_weight(generators::Union{Vector{Pauli{N}},Vector{PauliBas
    
     return expval, n_ops
 end
+
+
+"""
+  CURRENT DEVELOPMENT/TESTING:
+  The following functions perform the prunning via the use of a clip fucntion,
+  this might be more robust than the "on-the-fly" scheme.
+"""
+
+
+function clip_majorana_weight!(p::Dict{PauliBasis{N}, T}; max_w=4) where {N, T}
+    # Accessing the keys of the sum works
+    #for k in collect(keys(p))
+    #    print("k ", k, "p[k] ", p[k])
+    #    println("Test weight :", PauliOperators.simple_majorana_weight(k))
+    #end
+    filter!(q -> PauliOperators.simple_majorana_weight(q.first) ≤ max_w, p)
+end
+
+function clip_pauli_weight!(p::Dict{PauliBasis{N}, T}; max_w=4) where {N, T}
+    filter!(q -> PauliOperators.pauli_weight(q.first) ≤ max_w, p)
+end
+
+
+"""
+    bfs_evolution(generators::Vector{Pauli{N}}, angles, o::Pauli{N}, ket ; thres=1e-3) where {N}
+    Based on max_weight. This function uses clipping functions.
+
+"""
+function bfs_evolution_weight_clip(generators::Union{Vector{Pauli{N}},Vector{PauliBasis{N}}}, angles, o::PauliSum{N}, ket , w_type::String ; max_weight=4) where {N}
+#
+    # for a single pauli Unitary, U = exp(-i θn Pn/2)
+    # U' O U = cos(θ) O + i sin(θ) OP
+    nt = length(angles)
+    length(angles) == nt || throw(DimensionMismatch)
+    
+    vcos = cos.(angles)
+    vsin = sin.(angles)
+
+    # collect our results here...
+    expval = zero(ComplexF64)
+
+    o_transformed = deepcopy(o)
+  
+    n_ops = zeros(Int,nt)
+
+    for t in 1:nt
+
+        g = generators[t]
+        
+        sin_branch = PauliSum(N)
+
+        for (oi, coeff) in o_transformed#.ops
+            #println("coeff ", coeff, " oi: ", oi, "generator ", PauliBasis(g))
+
+            if PauliOperators.commute(oi, PauliBasis(g)) == false
+            
+                # cos branch
+                o_transformed[oi] = coeff * vcos[t]
+
+                # sin branch
+                oj = g * oi    # multiply the pauli's
+
+                sum!(sin_branch, oj * vsin[t] * coeff * 1im)
+
+            end
+        end
+        sum!(o_transformed, sin_branch) 
+
+        if w_type == "Majorana"
+            clip_majorana_weight!(o_transformed, max_w = max_weight)
+        
+        elseif w_type == "Pauli"
+            clip_pauli_weight!(o_transformed, max_w = max_weight)
+        end
+            
+        n_ops[t] = length(o_transformed)
+    end
+
+    for (oi,coeff) in o_transformed#.ops
+        expval += coeff*expectation_value(oi, ket)
+    end
+   
+    return expval, n_ops
+end

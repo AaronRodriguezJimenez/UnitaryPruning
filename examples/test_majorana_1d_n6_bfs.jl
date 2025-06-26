@@ -152,7 +152,8 @@ function bfs_evolution_test(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}
         end
         sum!(o_transformed, sin_branch) 
         #clip_thresh!(o_transformed, thresh=thresh)
-        # clip_weight!(o_transformed, weight=majo_thresh)
+        clip_weight!(o_transformed, weight=majo_thresh)
+ #       clip_majorana_weight!(o_transformed, weight=majo_thresh)
         n_ops[t] = length(o_transformed)
     end
 
