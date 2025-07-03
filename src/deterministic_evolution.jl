@@ -142,7 +142,6 @@ end
 """
     bfs_evolution(generators::Vector{Pauli{N}}, angles, o::Pauli{N}, ket ; thres=1e-3) where {N}
     Based on max_weight. This function avoids the use of a clipping function.
-
 """
 function bfs_evolution_weight(generators::Union{Vector{Pauli{N}},Vector{PauliBasis{N}}}, angles, o::PauliSum{N}, ket , w_type::String ; max_weight=4) where {N}
 #
@@ -235,7 +234,6 @@ end
 """
     bfs_evolution(generators::Vector{Pauli{N}}, angles, o::Pauli{N}, ket ; thres=1e-3) where {N}
     Based on max_weight. This function uses clipping functions.
-
 """
 function bfs_evolution_weight_clip(generators::Union{Vector{Pauli{N}},Vector{PauliBasis{N}}}, angles, o::PauliSum{N}, ket , w_type::String ; max_weight=4) where {N}
 #

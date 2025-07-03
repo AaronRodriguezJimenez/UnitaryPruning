@@ -1,3 +1,6 @@
+using LinearAlgebra
+using SparseArrays
+
 function get_unitary_sequence_1D(o::Pauli{N}; α=.01, k=10) where N
     generators = Vector{Pauli{N}}([])
     parameters = Vector{Float64}([])
@@ -85,22 +88,61 @@ function build_time_evolution_matrix(generators::Union{Vector{Pauli{N}}, Vector{
     return U 
 end
 
-function build_time_evolution_matrix_fast(generators::Vector{Pauli{N}}, angles::Vector{<:Real}) where N
+function build_time_evolution_matrix_fast!(U::AbstractMatrix{ComplexF64}, W::AbstractMatrix{ComplexF64},
+    generators::Vector{Pauli{N}},angles::Vector{<:Real}) where N
+
     nt = length(generators)
     length(angles) == nt || throw(DimensionMismatch())
 
-    # Start with identity matrix of size 2^N × 2^N
-    U = Matrix{ComplexF64}(I, 2^N, 2^N)
-    W = Matrix{ComplexF64}(undef, 2^N, 2^N)  # workspace to avoid allocs
+    fill!(U, 0.0)
+    @inbounds for i in axes(U, 1)
+        U[i, i] = 1.0
+    end
 
     for t in 1:nt
         α = angles[t]
-        Pmat = Matrix(generators[t])  # convert Pauli to matrix
+        Pmat = Matrix(generators[t])
 
-        # Use in-place multiplication: W = U * P
+        # W = U * Pmat (in-place)
         mul!(W, U, Pmat)
 
-        # Update U in-place: U = cos(α/2)*U - i*sin(α/2)*W
+        # U = cos(α/2)*U - i*sin(α/2)*W (in-place)
+        c, s = cos(α / 2), sin(α / 2)
+        @inbounds @simd for i in eachindex(U)
+            U[i] = c * U[i] - 1im * s * W[i]
+        end
+    end
+    
+    return U
+end
+
+function build_time_evolution_matrix_fast(N, generators, angles)
+    dim = 2^N
+    U = Matrix{ComplexF64}(undef, dim, dim)
+    W = similar(U)
+    return build_time_evolution_matrix_fast!(U, W, generators, angles)
+end
+
+function build_time_evolution_sparse!(
+    U::AbstractMatrix{ComplexF64},
+    W::AbstractMatrix{ComplexF64},
+    generators::Vector{<:Any},  # to allow sparse/dense Pauli
+    angles::Vector{<:Real}
+)
+    nt = length(generators)
+    length(angles) == nt || throw(DimensionMismatch())
+
+    fill!(U, 0)
+    @inbounds for i in axes(U, 1)
+        U[i, i] = 1.0
+    end
+
+    for t in 1:nt
+        α = angles[t]
+        Pmat = sparse(Matrix(generators[t]))  # sparse conversion here
+
+        mul!(W, U, Pmat)  # W = U * Pmat
+
         c, s = cos(α / 2), sin(α / 2)
         @inbounds @simd for i in eachindex(U)
             U[i] = c * U[i] - 1im * s * W[i]
@@ -108,4 +150,11 @@ function build_time_evolution_matrix_fast(generators::Vector{Pauli{N}}, angles::
     end
 
     return U
+end
+
+function build_time_evolution_sparse(N, generators, angles)
+    dim = 2^N
+    U = Matrix{ComplexF64}(undef, dim, dim)
+    W = similar(U)
+    return build_time_evolution_sparse!(U, W, generators, angles)
 end

@@ -7,6 +7,7 @@ using Random
 using LinearAlgebra
 using PauliOperators
 using SparseArrays
+using BenchmarkTools
 
 """
  The following function performs the Jordan-Wirgner mapping for fermionic 
@@ -71,63 +72,65 @@ end
   i is index a, and j is b in the following mapping
 """
 function hubbard_model_2D(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64, U::Float64, k::Int) where N
-    D = Lx * Ly # The dimension of the lattice
-    #A = zeros(Int, D, D)
-    #N = 2 * Lx * Ly
-    H_hop = PauliSum(N)
-    H_u = PauliSum(N)
+    D = Lx * Ly  # Number of lattice sites
+    generators = Vector{Pauli{N}}()
+    parameters = Vector{Float64}()
 
-    generators = Vector{Pauli{N}}([])
-    parameters = Vector{Float64}([])
+    # Linear index function (1-based)
+    linear_index(x, y) = (y - 1) * Lx + x  # x in 1:Lx, y in 1:Ly
 
-    for kl in 1:k        
-        #- - - Hopping term - - -
-        for y in 0:(Ly - 1)
-            for x in 0:(Lx - 1)
-                i = y * Lx + x + 1  # Index for site i
-    
-                # Right neighbor
-                if x < Lx - 1
-                    j = y * Lx + (x + 1) + 1
+    for kl in 1:k
+        H_hop = PauliSum(N)
+        H_u = PauliSum(N)
+
+        # Loop through all coordinates in 1-based indexing
+        for y in 1:Ly
+            for x in 1:Lx
+                i = linear_index(x, y)
+
+                # Right neighbor (x+1)
+                if x < Lx
+                    j = linear_index(x + 1, y)
                     for spin in 0:1
-                        a = i + spin * D #mode index for spin
+                        a = i + spin * D  # block spin: spin-up first [1:D], spin-down [D+1:2D]
                         b = j + spin * D
-                        H_hop += JWmapping(o,i=a,j=b) 
-                        H_hop += JWmapping(o,i=b,j=a)
+                        H_hop += JWmapping(o, i=a, j=b)
+                        H_hop += JWmapping(o, i=b, j=a)
                     end
                 end
-    
-                # Bottom neighbor
-                if y < Ly - 1
-                    j = (y + 1) * Lx + x + 1
+
+                # Bottom neighbor (y+1)
+                if y < Ly
+                    j = linear_index(x, y + 1)
                     for spin in 0:1
-                        a = i + spin * D  #mode index for spin
+                        a = i + spin * D
                         b = j + spin * D
-                        H_hop += JWmapping(o,i=a,j=b)
-                        H_hop += JWmapping(o,i=b,j=a)
+                        H_hop += JWmapping(o, i=a, j=b)
+                        H_hop += JWmapping(o, i=b, j=a)
                     end
                 end
             end
         end
-    
 
+        # Add hopping terms
         for (pauli, coeff) in H_hop
             push!(generators, Pauli(pauli))
-            push!(parameters, -t*coeff)
+            push!(parameters, -t * coeff)
         end
 
-         # - - - Interaction term - - -
+        # On-site interaction term
         for site in 1:D
-            a_up = site          # spin-up orbital
-            a_dn = site + D      # spin-down orbital
+            a_up = site           # spin-up orbital
+            a_dn = site + D       # spin-down orbital
             H_u += JWmapping(o, i=a_up, j=a_up) * JWmapping(o, i=a_dn, j=a_dn)
         end
-    
+
         for (pauli, coeff) in H_u
             push!(generators, Pauli(pauli))
-            push!(parameters, U*coeff)
+            push!(parameters, U * coeff)
         end
     end
+
     return generators, parameters
 end
 
@@ -155,44 +158,44 @@ Only nearest-neighbor interactions along the x and y directions are included.
 Open boundary conditions (OBC) are used by default.
 """
 function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64, U::Float64, k::Int) where N
-    D = Lx * Ly # Number of sites
-    H_hop = PauliSum(N)
-    H_u = PauliSum(N)
+    D = Lx * Ly  # number of lattice sites
 
     generators = Vector{Pauli{N}}()
     parameters = Vector{Float64}()
 
-    linear_index(x, y) = y * Lx + x + 1  # (0-based x, y to 1-based index)
+    # 1-based linear index
+    linear_index(x, y) = (y - 1) * Lx + x  # returns 1 to D
 
-    # Interleaved spin mapping:
-    # ↑ spin for site j: index 2j - 1
-    # ↓ spin for site j: index 2j
+    # Spin-orbital index: ↑ = 2j - 1, ↓ = 2j
     up(j) = 2*j - 1
     dn(j) = 2*j
 
     for kl in 1:k
-        # Hopping terms
-        for y in 0:(Ly - 1)
-            for x in 0:(Lx - 1)
+        H_hop = PauliSum(N)
+        H_u = PauliSum(N)
+
+        # Loop over 1-based coordinates
+        for y in 1:Ly
+            for x in 1:Lx
                 i = linear_index(x, y)
 
-                # Right neighbor
-                if x < Lx - 1
+                # Right neighbor (x+1)
+                if x < Lx
                     j = linear_index(x + 1, y)
-                    for mode in [(up, up), (dn, dn)]
-                        a = mode[1](i)
-                        b = mode[2](j)
+                    for (a_fn, b_fn) in [(up, up), (dn, dn)]
+                        a = a_fn(i)
+                        b = b_fn(j)
                         H_hop += JWmapping(o, i=a, j=b)
                         H_hop += JWmapping(o, i=b, j=a)
                     end
                 end
 
-                # Bottom neighbor
-                if y < Ly - 1
+                # Bottom neighbor (y+1)
+                if y < Ly
                     j = linear_index(x, y + 1)
-                    for mode in [(up, up), (dn, dn)]
-                        a = mode[1](i)
-                        b = mode[2](j)
+                    for (a_fn, b_fn) in [(up, up), (dn, dn)]
+                        a = a_fn(i)
+                        b = b_fn(j)
                         H_hop += JWmapping(o, i=a, j=b)
                         H_hop += JWmapping(o, i=b, j=a)
                     end
@@ -200,12 +203,13 @@ function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64,
             end
         end
 
+        # Add hopping terms
         for (pauli, coeff) in H_hop
             push!(generators, Pauli(pauli))
             push!(parameters, -t * coeff)
         end
 
-        # Interaction terms
+        # On-site interaction terms
         for site in 1:D
             a_up = up(site)
             a_dn = dn(site)
@@ -225,9 +229,13 @@ end
 function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_weight=1)
 
     N = 2*Lx*Ly
+    println(N)
+    #ket = Ket(N,0) #for interleaved
     ket = Ket(N,0)
     #println("Ket: ", ket)
-    o = Pauli(N, Z=[1])
+    #o = Pauli(N, Z=[8]) # for block
+    #display(o)
+    o = Pauli(N, Z=[1]) # for interleaved 
 
     #Create generators and parameters for the model
     #generators, parameters = hubbard_model_2D(o, Lx=Lx, Ly=Ly, t=t, U=U, k=k)
@@ -239,12 +247,12 @@ function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_
     ei, nops = UnitaryPruning.bfs_evolution_weight_clip(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
 
     # Exact evolution
-    U = UnitaryPruning.build_time_evolution_matrix(generators, parameters)
-    o_mat = Matrix(o)
-    m = diag(U'*o_mat*U)
-    abs_err = abs(real(m[1])- real(ei) )
+    #U = UnitaryPruning.build_time_evolution_matrix(generators, parameters)
+    #o_mat = Matrix(o)
+    #m = diag(U'*o_mat*U)
+    #abs_err = abs(real(m[1])- real(ei) )
     println("Exact :", real(m[1]), " Approx :", real(ei), " Absolute Error: ", abs_err)
-    return abs_err
+    return real(ei),real(ei),real(ei) #real(m[1]), real(ei), abs_err
 end
 
 function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, max_weights=0:2:6)
@@ -257,12 +265,12 @@ function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, m
 
     for mw in max_weights
         println("Evaluating max_weight = $mw")
-        err = run(Lx = Lx, Ly = Ly, t = t, U = U, k=k, w_type="Majorana", max_weight=mw)
+        _, _, err = run(Lx = Lx, Ly = Ly, t = t, U = U, k=k, w_type="Majorana", max_weight=mw)
         push!(errors, err)
         push!(weights, mw)
 
         println("Evaluating max_weight = $mw")
-        err = run(Lx = Lx, Ly = Ly, t = t, U = U, k=k, w_type="Pauli", max_weight=mw)
+        _,_, err = run(Lx = Lx, Ly = Ly, t = t, U = U, k=k, w_type="Pauli", max_weight=mw)
         push!(errors_pauli, err)
         push!(weights_pauli, mw)
     end
@@ -291,23 +299,64 @@ function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, m
     println("Plot saved as $filename")
 end
 
-for k in 1:6
-    println("Calculation for k = ", k)
-    plot_abs_error_vs_weight_pdf(Lx=2, Ly=2, t=1.0, U=2.0, k=k, max_weights=1:1:8)
+function properties_table(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k = 1, max_weights = 0:2:6)
+    results_majo = []
+    results_pauli = []
+
+    for mw in max_weights
+        println("Evaluating Majorana, max_weight = $mw")
+        bench = @benchmark run(Lx = $Lx, Ly = $Ly, t = $t, U = $U, k = $k, w_type = "Majorana", max_weight = $mw)
+        output = run(Lx = Lx, Ly = Ly, t = t, U = U, k = k, w_type = "Majorana", max_weight = mw)
+        push!(results_majo, (k, output[1], output[2], output[3], median(bench.times) / 1e9))  # convert ns to s
+
+        println("Evaluating Pauli, max_weight = $mw")
+        bench = @benchmark run(Lx = $Lx, Ly = $Ly, t = $t, U = $U, k = $k, w_type = "Pauli", max_weight = $mw)
+        output = run(Lx = Lx, Ly = Ly, t = t, U = U, k = k, w_type = "Pauli", max_weight = mw)
+        push!(results_pauli, (k, output[1], output[2], output[3], median(bench.times) / 1e9))
+    end
+
+    # Save to text files
+    function save_results(filename, results)
+        open(filename, "w") do io
+            @printf(io, "%-4s | %-12s | %-12s | %-10s | %-10s\n", "k", "E_exact", "E_circ", "Error", "Run time")
+            @printf(io, "%s\n", "-"^60)
+            for (k, e_exact, e_circ, err, t_run) in results
+                @printf(io, "%-4d | %-12.6f | %-12.6f | %-10.2e | %-10.4f\n", k, e_exact, e_circ, err, t_run)
+            end
+        end
+    end
+
+    filename_majo = @sprintf("results_majorana_U%.1f_k%d.txt", U, k)
+    filename_pauli = @sprintf("results_pauli_U%.1f_k%d.txt", U, k)
+
+    save_results(filename_majo, results_majo)
+    save_results(filename_pauli, results_pauli)
 end
 
-# Testing stuff
-# Compute C^dagger_i term
-#a = 3
+Us = [2.0]#, 4.0, 6.0, 8.0, 10.0, 12.0]
+ks = [1]#,2,3]#,4,5,10]
+for u in Us
+    for k in ks
+    println("Calculation for k = ", k, "  U = ", u)
+    plot_abs_error_vs_weight_pdf(Lx=7, Ly=7, t=1.0, U=u, k=k, max_weights=0:2:32)
+    #properties_table(Lx=2, Ly=2, t=1.0, U=u, k=k, max_weights=1:1:8)
+    end
+end
+
+
+## Testing stuff
+## Compute C^dagger_i term
+#N = 32
+#a = 8
 #b = 1
 #ax_term = Pauli(2^(a-1)-1, 2^(a-1), N)
 #ay_term = Pauli(2^(a)-1, 2^(a-1), N)
 #c_dagg_a = 0.5 * (ax_term - ay_term)
-# Compute C_j term
+## Compute C_j term
 #bx_term = Pauli(2^(b-1)-1, 2^(b-1), N)
 #by_term = Pauli(2^(b)-1, 2^(b-1), N)
 #c_b = 0.5 * (bx_term + by_term)
-# Build C^dagger_i*C_j
+## Build C^dagger_i*C_j
 #term =  c_dagg_a*c_b 
 #result = term + adjoint(term)
 #println("Build C^dagger_i*C_j:")
