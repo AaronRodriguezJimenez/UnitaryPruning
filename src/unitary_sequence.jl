@@ -123,38 +123,41 @@ function build_time_evolution_matrix_fast(N, generators, angles)
     return build_time_evolution_matrix_fast!(U, W, generators, angles)
 end
 
-function build_time_evolution_sparse!(
-    U::AbstractMatrix{ComplexF64},
-    W::AbstractMatrix{ComplexF64},
-    generators::Vector{<:Any},  # to allow sparse/dense Pauli
-    angles::Vector{<:Real}
-)
-    nt = length(generators)
-    length(angles) == nt || throw(DimensionMismatch())
-
-    fill!(U, 0)
-    @inbounds for i in axes(U, 1)
-        U[i, i] = 1.0
-    end
-
-    for t in 1:nt
-        α = angles[t]
-        Pmat = sparse(Matrix(generators[t]))  # sparse conversion here
-
-        mul!(W, U, Pmat)  # W = U * Pmat
-
-        c, s = cos(α / 2), sin(α / 2)
-        @inbounds @simd for i in eachindex(U)
-            U[i] = c * U[i] - 1im * s * W[i]
-        end
-    end
-
-    return U
+#- - - Scrodinger time evolution 
+"""
+  matvec fucntion return the effect of Operator o applied to the vector V
+  which must correspond to some compatible ket    
+"""
+function apply_pauli_index_phase(p::Pauli{N}, i::Int) where N
+    coeff, ketj = p * Ket(N, i)  
+    
+    return ketj.v, coeff
 end
 
-function build_time_evolution_sparse(N, generators, angles)
-    dim = 2^N
-    U = Matrix{ComplexF64}(undef, dim, dim)
-    W = similar(U)
-    return build_time_evolution_sparse!(U, W, generators, angles)
+function matvec(o::Pauli{N}, coeff::Number, V::Vector) where N
+    σ = zeros(promote_type(typeof(coeff), eltype(V), ComplexF64), length(V))
+
+    for i in 0:2^N - 1
+        j, phase = apply_pauli_index_phase(o, i)  # returns target index and phase
+        
+        σ[j + 1] += coeff * V[i + 1] * phase
+    end
+
+    return σ
+end
+
+function compute_schrodinger_evol(generators, parameters, ref_ket)
+    nt = length(generators)
+    length(parameters) == nt || throw(DimensionMismatch)
+
+    U_psi = copy(ref_ket)
+
+    for t in 1:nt
+        α = parameters[t]
+        Pψ = matvec(generators[t], 1.0, U_psi)
+        U_psi = cos(α/2) .* U_psi - 1im * sin(α/2) .* Pψ
+        U_psi /= norm(U_psi)  # normalize at each step
+    end
+
+    return U_psi
 end

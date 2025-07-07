@@ -168,26 +168,34 @@ function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_
 
     N = 2*Lx*Ly
     ket = Ket(N,0)
-    #println("Ket: ", ket)
     o = Pauli(N, Z=[1])
 
     #Create generators and parameters for the model
     generators, parameters = fermi_hubbard_2D(o, t=t, U=U, k=k)
     #generators, parameters = fermi_hubbard_2D_block(o, t=t, U=U, k=k)
-    #print(generators)
-    #print(parameters)
-    #Call to bfs bfs_evolution_test based on weight
+    
 
+    #Call to bfs bfs_evolution_test based on weight
     ei, nops = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
     #ei, nops = UnitaryPruning.bfs_evolution_weight_clip(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
 
-    # Exact evolution
+    # Exact evolution (Schrodinger picture)
+    vector_ket = Vector(ket)
+    #println("Vector ket: $ket -> ", vector_ket)
+    U_psi = compute_schrodinger_evol(generators, parameters, vector_ket)
+    expval = U_psi' * UnitaryPruning.matvec(o, 1.00, U_psi)
+    println("Expval Schr :", expval)
+
+    
+    # Exact evolution (Heisenberg picture)
     #U = UnitaryPruning.build_time_evolution_matrix(generators, parameters)
     #o_mat = Matrix(o)
     #m = diag(U'*o_mat*U)
-    #abs_err = abs(real(m[1])- real(ei) )
-    #println("Exact :", real(m[1]), " Approx :", real(ei), " Absolute Error: ", abs_err)
-    return ei#abs_err
+    #expval = m[1]
+
+    abs_err = abs(real(expval)- real(ei) )
+    println("Exact :", real(expval), " Approx :", real(ei), " Absolute Error: ", abs_err)
+    return abs_err
 end
 
 function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, max_weights=0:2:6)
@@ -235,13 +243,13 @@ function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, m
     title!("Hubbard, U=$U, t=-$t, k=$k")
     title!("Error vs Max Weight Cutoff (Hubbard, U=$U, t=-$t)")
 
-    filename="2D_Hubbard_test_energy_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
-    #filename="2D_Hubbard_test_abs_error_vs_weight_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
+    #filename="2D_Hubbard_test_energy_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
+    filename="TEST-2D_Hubbard_test_abs_error_vs_weight_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
     savefig(plt, filename)
     println("Plot saved as $filename")
 end
     
-plot_abs_error_vs_weight_pdf(Lx=8, Ly=8, t=1.0, U=2.0, k=5, max_weights=1:1:32)
+plot_abs_error_vs_weight_pdf(Lx=2, Ly=2, t=1.0, U=2.0, k=1, max_weights=1:1:8)
 
 # Testing stuff
 # Compute C^dagger_i term
