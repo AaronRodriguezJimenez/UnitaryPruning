@@ -209,14 +209,6 @@ function bfs_evolution_weight(generators::Union{Vector{Pauli{N}},Vector{PauliBas
     return expval, n_ops
 end
 
-
-"""
-  CURRENT DEVELOPMENT/TESTING:
-  The following functions perform the prunning via the use of a clip fucntion,
-  this might be more robust than the "on-the-fly" scheme.
-"""
-
-
 function clip_majorana_weight!(p::Dict{PauliBasis{N}, T}; max_w=4) where {N, T}
     # Accessing the keys of the sum works
     #for k in collect(keys(p))

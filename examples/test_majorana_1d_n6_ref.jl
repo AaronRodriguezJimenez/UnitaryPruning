@@ -100,4 +100,4 @@ function run(;k=5, N=6)
     return 
 end
 
-run(k=6, N=6)
+run(k=1, N=6)

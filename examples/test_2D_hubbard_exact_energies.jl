@@ -1,12 +1,15 @@
 using Distributed
 using UnitaryPruning
-using Plots
-using Statistics
 using Printf
 using Random
 using LinearAlgebra
 using PauliOperators
 using SparseArrays
+
+"""
+ HERE WE ARE JUST COMPUTING THE EXACT ENERGIES UNDER THE SCHRODINGER
+ PICTURE FOR THE LARGER LATTICES
+"""
 
 function jw_transform(o::Pauli{N}, site) where N
     z_string = [i for i in 1:site-1]
@@ -164,7 +167,137 @@ function fermi_hubbard_2D_block(o::Pauli{N}; t, U, k) where N
     return generators, parameters
 end
 
-function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_weight=1)
+# 
+#- - - Scrodinger time evolution 
+#
+"""
+  Fucntion to return the effect of Operator o applied to the vector V
+  which must correspond to some compatible ket    
+"""
+function apply_pauli_index_phase(p::Pauli{N}, i::Union{Int128, Int64}) where N
+    coeff, ketj = p * Ket(N, i)  
+    return ketj.v, coeff
+end
+
+"""
+ This function avoids the use of vector allocation and updates the result of
+ the time evolution state as a dictionary.
+"""
+function compute_schrodinger_sparse_evol(generators, parameters, ref_ket::Ket{N}) where N
+    ψ = Dict{Int128, ComplexF64}()
+    ψ[ref_ket.v] = 1.0 + 0im
+    Pψ = Dict{Int128, ComplexF64}()
+    newψ = Dict{Int128, ComplexF64}()
+
+    for t in eachindex(generators)
+        empty!(Pψ)
+        α = parameters[t]
+        cosα2 = cos(α / 2)
+        sinα2 = sin(α / 2)
+
+        for (i, amp) in ψ
+            j, phase = apply_pauli_index_phase(generators[t], i)
+            Pψ[j] = get(Pψ, j, 0.0) + amp * phase
+        end
+
+        empty!(newψ)
+        for key in keys(ψ)
+            ψ_val = ψ[key]
+            P_val = get(Pψ, key, 0.0)
+            newψ[key] = cosα2 * ψ_val - 1im * sinα2 * P_val
+        end
+        for key in keys(Pψ)
+            if !haskey(ψ, key)
+                newψ[key] = -1im * sinα2 * Pψ[key]
+            end
+        end
+
+        ψ, newψ = newψ, ψ
+    end
+
+    return ψ
+end
+
+function expectation(ψ::Dict{Int128, ComplexF64}, o::Pauli{N}) where N
+    result = 0.0 + 0im
+    for (i, amp) in ψ
+        j, phase = apply_pauli_index_phase(o, i)
+        result += conj(amp) * get(ψ, j, 0.0) * phase
+    end
+    return result
+end
+
+
+"""
+ This function is an update to compute_schrodinger_sparse_evol which seeks to
+ avoid the allocation of dictionaries.
+"""
+function compute_schrodinger_array_evol(generators, parameters, ket::Ket{N}) where N
+    inds = [ket.v]                     # List of basis indices
+    amps = [1.0 + 0im]                 # Corresponding amplitudes
+
+    nt = length(generators)
+    for i in 1:nt
+        α = parameters[i]
+        g = generators[i]
+        
+        new_inds = Int128[]
+        new_amps = ComplexF64[]
+        seen = Dict{Int128,Int}()
+
+        ni = length(inds)
+        for j in 1:ni
+            idx = inds[j]
+            amp = amps[j]
+
+            idx_p, phase = apply_pauli_index_phase(g, idx)
+
+            # Compute the updated amplitude
+            ψ0 = cos(α/2) * amp
+            ψ1 = -1im * sin(α/2) * phase * amp
+
+            # Accumulate ψ0 (original idx)
+            if haskey(seen, idx)
+                new_amps[seen[idx]] += ψ0
+            else
+                push!(new_inds, idx)
+                push!(new_amps, ψ0)
+                seen[idx] = length(new_inds)
+            end
+
+            # Accumulate ψ1 (transformed idx_p)
+            if haskey(seen, idx_p)
+                new_amps[seen[idx_p]] += ψ1
+            else
+                push!(new_inds, idx_p)
+                push!(new_amps, ψ1)
+                seen[idx_p] = length(new_inds)
+            end
+        end
+
+        inds, amps = new_inds, new_amps
+    end
+
+    return inds, amps
+end
+
+function expectation_from_sparse(inds, amps, o::Pauli{N}) where N
+    acc = 0.0 + 0im
+    ni = length(inds)
+    for i in 1:ni
+        idx = inds[i]
+        amp = amps[i]
+        j, phase = apply_pauli_index_phase(o, idx)
+        
+        pos = findfirst(isequal(j), inds)
+        if pos !== nothing
+            acc += conj(amp) * phase * amps[pos]
+        end
+    end
+    return acc
+end
+
+function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1)
 
     N = 2*Lx*Ly
     ket = Ket(N,0)
@@ -173,102 +306,32 @@ function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_
     #Create generators and parameters for the model
     generators, parameters = fermi_hubbard_2D(o, t=t, U=U, k=k)
     #generators, parameters = fermi_hubbard_2D_block(o, t=t, U=U, k=k)
-    
-
-    #Call to bfs bfs_evolution_test based on weight
-    ei, nops = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
-    #ei, nops = UnitaryPruning.bfs_evolution_weight_clip(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
 
     # Exact evolution (Schrodinger picture)
     #vector_ket = Vector(ket)
     #println("Vector ket: $ket -> ", vector_ket)
-    #U_psi = compute_schrodinger_evol(generators, parameters, vector_ket)
+    #U_psi = UnitaryPruning.compute_schrodinger_evol(generators, parameters, vector_ket)
     #expval = U_psi' * UnitaryPruning.matvec(o, 1.00, U_psi)
     
-    
     # Schrodinger sparse-lite version
-    ψ = compute_schrodinger_sparse_evol(generators, parameters, ket)
-    expval = expectation(ψ, o)
+    #ψ = compute_schrodinger_sparse_evol(generators, parameters, ket)
+    #expval = expectation(ψ, o)
+    #println("Expval Schr :", expval)
+
+    #Schrodinger sparse-lite version 2
+    inds, amps = compute_schrodinger_array_evol(generators, parameters, ket)
+    expval =  expectation_from_sparse(inds, amps, o)
     println("Expval Schr :", expval)
 
-    
     # Exact evolution (Heisenberg picture)
     #U = UnitaryPruning.build_time_evolution_matrix(generators, parameters)
     #o_mat = Matrix(o)
     #m = diag(U'*o_mat*U)
     #expval = m[1]
+    #println("Expval Heis :", expval)
 
-    abs_err = abs(real(expval)- real(ei) )
-    println("Exact :", real(expval), " Approx :", real(ei), " Absolute Error: ", abs_err)
-    return abs_err
+    return 0# expval
 end
 
-function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, max_weights=0:2:6)
-    errors = Float64[]
-    weights = Int[]
-
-    errors_pauli = Float64[]
-    weights_pauli = Int[]
-
-
-    for mw in max_weights
-        #println("Evaluating max_weight = $mw")
-        err = run(Lx = Lx, Ly = Ly, t = t, U = U, k=k, w_type="Majorana", max_weight=mw)
-        push!(errors, err)
-        push!(weights, mw)
-        println("Majorana : maxw : $mw  k : $k ei : $err")
-    end
-
-    for mw in max_weights
-        #println("Evaluating max_weight = $mw")
-        err = run(Lx = Lx, Ly = Ly, t = t, U = U, k=k, w_type="Pauli", max_weight=mw)
-        push!(errors_pauli, err)
-        push!(weights_pauli, mw)
-        println("Pauli : maxw : $mw  k : $k ei : $err")
-
-    end
-
-    # Plot comparison
-    plt = plot(
-        weights, errors,
-        label = "Majorana",
-        marker = :circle,
-        lw = 2,
-    )
-    plot!(
-        weights_pauli, errors_pauli,
-        label = "Pauli",
-        marker = :square,
-        lw =2
-    )
-
-    xlabel!("Max Weight Cutoff")
-    ylabel!("Estimated energy")
-    #ylabel!("Absolute Error")
-    title!("Hubbard, U=$U, t=-$t, k=$k")
-    title!("Error vs Max Weight Cutoff (Hubbard, U=$U, t=-$t)")
-
-    #filename="2D_Hubbard_test_energy_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
-    filename="TEST-2D_Hubbard_test_abs_error_vs_weight_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
-    savefig(plt, filename)
-    println("Plot saved as $filename")
-end
-    
-plot_abs_error_vs_weight_pdf(Lx=4, Ly=4, t=1.0, U=2.0, k=1, max_weights=1:1:8)
-
-# Testing stuff
-# Compute C^dagger_i term
-#a = 3
-#b = 1
-#ax_term = Pauli(2^(a-1)-1, 2^(a-1), N)
-#ay_term = Pauli(2^(a)-1, 2^(a-1), N)
-#c_dagg_a = 0.5 * (ax_term - ay_term)
-# Compute C_j term
-#bx_term = Pauli(2^(b-1)-1, 2^(b-1), N)
-#by_term = Pauli(2^(b)-1, 2^(b-1), N)
-#c_b = 0.5 * (bx_term + by_term)
-# Build C^dagger_i*C_j
-#term =  c_dagg_a*c_b 
-#result = term + adjoint(term)
-#println("Build C^dagger_i*C_j:")
-#println(string(result))
+   
+run(Lx=3, Ly=3, t=1.0, U=2.0, k=1)

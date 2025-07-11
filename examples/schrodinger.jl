@@ -5,7 +5,7 @@ using BenchmarkTools
 using ExponentialUtilities  
 """
   matvec fucntion return the effect of Operator o applied to the vector V
-  which must correspond to some compatible ket    
+  which must correspond to some ket    
 """
 function apply_pauli_index_phase(p::Pauli{N}, i::Int) where N
     coeff, ketj = p * Ket(N, i)  
@@ -67,7 +67,7 @@ println("U*v vs cos(θ/2) * v - 1im * sin(θ/2) * matvec(p, 1.0, v) - Are they e
 println(" ")
 
 # # # # # Test Time evolution subroutines # # # # # #
-N = 32
+N = 5
 generators = [Pauli(N, Z=[1], X=[2]), Pauli(N, Z=[1,2]), Pauli(N, Z=[2])]
 parameters = [3.14/2, 0.6, 0.3]
 o = Pauli(N, Z=[2])
@@ -75,10 +75,10 @@ ket = Ket(N,2)
 bra = Bra(N,1)
 
 vector_ket = Vector(ket)
-#println("Vector ket: $ket -> ", vector_ket)
+println("Vector ket: $ket -> ", vector_ket)
 
 U_psi = compute_schrodinger_evol(generators, parameters, vector_ket)
-#println("res :", U_psi)
+println("res :", U_psi)
 
 expval = U_psi' * matvec(o, 1.00, U_psi)
 println("Expval Schr :", expval)
