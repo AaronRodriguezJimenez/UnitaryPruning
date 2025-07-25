@@ -187,9 +187,9 @@ function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_
     
     
     # Schrodinger sparse-lite version
-    ψ = compute_schrodinger_sparse_evol(generators, parameters, ket)
-    expval = expectation(ψ, o)
-    println("Expval Schr :", expval)
+    #ψ = compute_schrodinger_sparse_evol(generators, parameters, ket)
+    #expval = expectation(ψ, o)
+    #println("Expval Schr :", expval)
 
     
     # Exact evolution (Heisenberg picture)
@@ -198,9 +198,9 @@ function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_
     #m = diag(U'*o_mat*U)
     #expval = m[1]
 
-    abs_err = abs(real(expval)- real(ei) )
-    println("Exact :", real(expval), " Approx :", real(ei), " Absolute Error: ", abs_err)
-    return abs_err
+    #abs_err = abs(real(expval)- real(ei) )
+    #println("Exact :", real(expval), " Approx :", real(ei), " Absolute Error: ", abs_err)
+    return ei #abs_err
 end
 
 function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, max_weights=0:2:6)
@@ -246,15 +246,15 @@ function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, m
     ylabel!("Estimated energy")
     #ylabel!("Absolute Error")
     title!("Hubbard, U=$U, t=-$t, k=$k")
-    title!("Error vs Max Weight Cutoff (Hubbard, U=$U, t=-$t)")
+    #title!("Error vs Max Weight Cutoff (Hubbard, U=$U, t=-$t)")
 
-    #filename="2D_Hubbard_test_energy_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
-    filename="TEST-2D_Hubbard_test_abs_error_vs_weight_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
+    filename="2D_Hubbard_test_energy_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
+    #filename="TEST-2D_Hubbard_test_abs_error_vs_weight_Lx=$Lx-Ly=$Ly-k=$k-CH.pdf"
     savefig(plt, filename)
     println("Plot saved as $filename")
 end
     
-plot_abs_error_vs_weight_pdf(Lx=4, Ly=4, t=1.0, U=2.0, k=1, max_weights=1:1:8)
+plot_abs_error_vs_weight_pdf(Lx=2, Ly=2, t=1.0, U=2.0, k=5, max_weights=1:1:16)
 
 # Testing stuff
 # Compute C^dagger_i term
