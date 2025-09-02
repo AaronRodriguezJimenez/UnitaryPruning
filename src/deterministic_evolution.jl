@@ -77,15 +77,20 @@ function deterministic_pauli_rotations(generators::Vector{Pauli{N}}, angles, o::
     return expval, n_ops
 end
 
-
-
+"""
+    clip!(ps::PauliSum{N}; thresh=1e-16) where {N}
+    Clip the PauliSum in place, removing terms with abs(coeff) < thresh
+"""
+function clip!(ps::PauliSum{N}; thresh=1e-16) where {N}
+    filter!(p->abs(p.second) ≥ thresh , ps)
+end
 
 """
     bfs_evolution(generators::Vector{Pauli{N}}, angles, o::Pauli{N}, ket ; thres=1e-3) where {N}
 
 
 """
-function bfs_evolution(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket ; thresh=1e-3) where {N}
+function bfs_evolution(generators::Union{Vector{Pauli{N}},Vector{PauliBasis{N}}}, angles, o::PauliSum{N}, ket ; thresh=1e-3) where {N}
 
     #
     # for a single pauli Unitary, U = exp(-i θn Pn/2)
@@ -110,12 +115,12 @@ function bfs_evolution(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket
 
         sin_branch = PauliSum(N)
 
-        for (oi,coeff) in o_transformed.ops
+        for (oi,coeff) in o_transformed
            
             abs(coeff) > thresh || continue
 
 
-            if commute(oi, g.pauli) == false
+            if PauliOperators.commute(oi, PauliBasis(g)) == false
                 
                 # cos branch
                 o_transformed[oi] = coeff * vcos[t]
@@ -131,8 +136,8 @@ function bfs_evolution(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket
         n_ops[t] = length(o_transformed)
     end
 
-    for (oi,coeff) in o_transformed.ops
-        expval += coeff*expectation_value(oi, ket)
+    for (oi,coeff) in o_transformed
+        expval += coeff*PauliOperators.expectation_value(oi, ket)
     end
    
     return expval, n_ops
@@ -157,6 +162,7 @@ function bfs_evolution_weight(generators::Union{Vector{Pauli{N}},Vector{PauliBas
     expval = zero(ComplexF64)
 
     o_transformed = deepcopy(o)
+    #sin_branch = PauliSum(N)
   
     n_ops = zeros(Int,nt)
 
@@ -220,6 +226,14 @@ end
 
 function clip_pauli_weight!(p::Dict{PauliBasis{N}, T}; max_w=4) where {N, T}
     filter!(q -> PauliOperators.pauli_weight(q.first) ≤ max_w, p)
+end
+
+function clip_thresh_weight!(ps::PauliSum{N}; thresh=1e-16, lc = 0, w_type = 0) where {N}
+    if w_type == 0 
+        filter!(p->(weight(p.first) ≤ lc) && (abs(p.second) ≥ thresh) , ps.ops)
+    else
+        filter!(p->(majorana_weight(p.first) ≤ lc) && (abs(p.second) ≥ thresh) , ps.ops)
+    end     
 end
 
 

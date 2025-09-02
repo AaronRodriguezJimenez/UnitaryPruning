@@ -48,11 +48,11 @@ end
 #   exp(i θ/2 (-X)) exp(i π/4 ZZ)
 #
 
-function run(; N=10, k=6, w_type = "Majorana", max_weight=1)
+function run_1D_TFIM(; N=10, k=6, w_type = "Majorana", max_weight=1)
    
     ket = Ket(N, 0) 
     o = Pauli(N, Z=[1])
-    α = 1# π / 32 
+    α = π / 2 #π / 32 #Also known as h
     
     # Generators and parameters for a single angle
     generators, parameters = get_unitary_sequence_1D_test(o, α=α, k=k)
@@ -68,13 +68,16 @@ function run(; N=10, k=6, w_type = "Majorana", max_weight=1)
     return abs_err
 end
 
+#
+# - Single run call
+#
 function plot_abs_error_vs_weight_pdf(; N=6, k=10, w_type="Pauli", max_weights=0:2:6)
     errors = Float64[]
     weights = Int[]
     
     for mw in max_weights
         println("Evaluating max_weight = $mw")
-        err = run(N=N, k=k, w_type=w_type, max_weight=mw)
+        err = run_1D_TFIM(N=N, k=k, w_type=w_type, max_weight=mw)
         push!(errors, err)
         push!(weights, mw)
     end
@@ -95,4 +98,45 @@ function plot_abs_error_vs_weight_pdf(; N=6, k=10, w_type="Pauli", max_weights=0
     println("Plot saved as $filename")
 end
     
-plot_abs_error_vs_weight_pdf(N=6, k=10, w_type="Pauli", max_weights=1:2:10)
+#plot_abs_error_vs_weight_pdf(N=6, k=10, w_type="Pauli", max_weights=1:2:10)
+
+#
+#- - Weight Comparison
+#
+function plot_abs_error_vs_weight_pdf_1D_compare(; N=3, k=10, max_weights=0:2:6)
+    errors_majorana = Float64[]
+    errors_pauli = Float64[]
+    weights = Int[]
+
+    for mw in max_weights
+        println("Evaluating max_weight = $mw (Majorana)")
+        err_maj = run_1D_TFIM(N=N, k=k, w_type="Majorana", max_weight=mw)
+        push!(errors_majorana, err_maj)
+
+        println("Evaluating max_weight = $mw (Pauli)")
+        err_pau = run_1D_TFIM(N=N, k=k, w_type="Pauli", max_weight=mw)
+        push!(errors_pauli, err_pau)
+
+        push!(weights, mw)
+    end
+
+    plt = plot(
+        weights, errors_majorana,
+        xlabel = "Max Weight Cutoff",
+        ylabel = "Absolute Error",
+        title = "1D TFIM (N = $N, k = $k)",
+        marker = :circle,
+        lw = 2,
+        label = "Majorana",
+        grid = true
+    )
+
+    plot!(weights, errors_pauli, marker=:square, lw=2, label="Pauli")
+
+    filename = "1D_TFIM_abs_error_vs_weight-N=$N-k=$k-lim.pdf"
+    savefig(plt, filename)
+    println("Plot saved as $filename")
+end
+
+# Example run
+plot_abs_error_vs_weight_pdf_1D_compare(N=10, k=10, max_weights=0:2:20)

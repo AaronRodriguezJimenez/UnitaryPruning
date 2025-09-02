@@ -14,6 +14,7 @@ using BenchmarkTools
     bilinear terms 
     N - Total number of fermionic modes
     a,b, - indices of the modes to be mapped
+    returns term = c^dagger_a * c_b
 """
 function JWmapping(o::Pauli{N}; i::Int, j::Int) where N
     # Compute C^dagger_i term
@@ -71,10 +72,15 @@ end
   n_j = c^dagg_j*c_j = 1/2 (1 - Z_j)
   i is index a, and j is b in the following mapping
 """
-function hubbard_model_2D(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64, U::Float64, k::Int) where N
+function hubbard_model_2D_block(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64, U::Float64, k::Int) where N
+    
     D = Lx * Ly  # Number of lattice sites
+
     generators = Vector{Pauli{N}}()
     parameters = Vector{Float64}()
+
+    H_hop = PauliSum(N)
+    H_u = PauliSum(N)
 
     # Linear index function (1-based)
     linear_index(x, y) = (y - 1) * Lx + x  # x in 1:Lx, y in 1:Ly
@@ -82,10 +88,10 @@ function hubbard_model_2D(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64, U::Float64,
     for kl in 1:k
         H_hop = PauliSum(N)
         H_u = PauliSum(N)
-
+            
         # Loop through all coordinates in 1-based indexing
-        for y in 1:Ly
-            for x in 1:Lx
+        for x in 1:Lx
+            for y in 1:Ly
                 i = linear_index(x, y)
 
                 # Right neighbor (x+1)
@@ -157,11 +163,14 @@ where:
 Only nearest-neighbor interactions along the x and y directions are included.
 Open boundary conditions (OBC) are used by default.
 """
-function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64, U::Float64, k::Int) where N
+function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int64, Ly::Int64, t::Float64, U::Float64, k::Int64) where N
     D = Lx * Ly  # number of lattice sites
 
     generators = Vector{Pauli{N}}()
     parameters = Vector{Float64}()
+
+    H_hop = PauliSum(N)
+    H_u = PauliSum(N)
 
     # 1-based linear index
     linear_index(x, y) = (y - 1) * Lx + x  # returns 1 to D
@@ -171,12 +180,13 @@ function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64,
     dn(j) = 2*j
 
     for kl in 1:k
+
         H_hop = PauliSum(N)
         H_u = PauliSum(N)
 
         # Loop over 1-based coordinates
-        for y in 1:Ly
-            for x in 1:Lx
+        for x in 1:Lx
+            for y in 1:Ly
                 i = linear_index(x, y)
 
                 # Right neighbor (x+1)
@@ -229,7 +239,7 @@ end
 function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_weight=1)
 
     N = 2*Lx*Ly
-    println(N)
+    #println(N)
     #ket = Ket(N,0) #for interleaved
     ket = Ket(N,0)
     #println("Ket: ", ket)
@@ -243,16 +253,17 @@ function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_
     
     #Call to bfs bfs_evolution_test based on weight
 
-    #ei, nops = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
-    ei, nops = UnitaryPruning.bfs_evolution_weight_clip(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
+    ei, nops = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
+    #ei, nops = UnitaryPruning.bfs_evolution_weight_clip(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
 
     # Exact evolution
-    #U = UnitaryPruning.build_time_evolution_matrix(generators, parameters)
-    #o_mat = Matrix(o)
-    #m = diag(U'*o_mat*U)
-    #abs_err = abs(real(m[1])- real(ei) )
+    U = UnitaryPruning.build_time_evolution_matrix(generators, parameters)
+    o_mat = Matrix(o)
+    m = diag(U'*o_mat*U)
+    abs_err = abs(real(m[1])- real(ei) )
     println("Exact :", real(m[1]), " Approx :", real(ei), " Absolute Error: ", abs_err)
-    return real(ei),real(ei),real(ei) #real(m[1]), real(ei), abs_err
+    #return real(ei),real(ei),real(ei) #Activate for expectation values analysis
+    return real(m[1]), real(ei), abs_err #Activate for error analysis
 end
 
 function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, max_weights=0:2:6)
@@ -277,24 +288,26 @@ function plot_abs_error_vs_weight_pdf(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1, m
 
     # Plot comparison
     plt = plot(
-        weights, errors,
-        label = "Majorana",
+        weights_pauli, errors_pauli,
+        label = "Pauli",
         marker = :circle,
         lw = 2,
     )
     plot!(
-        weights_pauli, errors_pauli,
-        label = "Pauli",
-        marker = :square,
+        weights, errors,
+        label = "Majorana",
+        marker = :circle,
         lw =2
     )
 
     xlabel!("Max Weight Cutoff")
     ylabel!("Absolute Error")
-    title!("2D Hubbard, Lx=$Lx-Ly=$Ly-t=$t-U=$U-k=$k")
+    title!("L=$Lx, t=-$t, U=$U, k=$k")
+    #title!("2D Hubbard, Lx=$Lx-Ly=$Ly-t=$t-U=$U-k=$k")
 
     
-    filename="2D_Hubbard_test_abs_error_vs_weight_Lx=$Lx-Ly=$Ly-t=$t-U=$U-k=$k.png"
+    #filename="2D_Hubbard_test_abs_error_vs_weight_Lx=$Lx-Ly=$Ly-t=$t-U=$U-k=$k.pdf"
+    filename="2D_Hubbard_abs_error_L=$Lx-t=$t-U=$U-k=$k.pdf"
     savefig(plt, filename)
     println("Plot saved as $filename")
 end
@@ -333,12 +346,12 @@ function properties_table(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k = 1, max_weights
     save_results(filename_pauli, results_pauli)
 end
 
-Us = [2.0]#, 4.0, 6.0, 8.0, 10.0, 12.0]
-ks = [1]#,2,3]#,4,5,10]
+Us = [10.0]#, 4.0, 6.0, 8.0, 10.0, 12.0]
+ks = [1,2,5,10]
 for u in Us
     for k in ks
     println("Calculation for k = ", k, "  U = ", u)
-    plot_abs_error_vs_weight_pdf(Lx=7, Ly=7, t=1.0, U=u, k=k, max_weights=0:2:32)
+    plot_abs_error_vs_weight_pdf(Lx=2, Ly=2, t=1.0, U=u, k=k, max_weights=1:1:16)
     #properties_table(Lx=2, Ly=2, t=1.0, U=u, k=k, max_weights=1:1:8)
     end
 end
