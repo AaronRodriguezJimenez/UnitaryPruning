@@ -13,8 +13,9 @@ using PauliOperators
 """
 
 #- - - Check the expectation value o Z1
-u = 0.3  # On-site interaction strength
-t = 0.2  # hopping parameter
+u = 2.0#0.3  # On-site interaction strength
+t = 1.0#0.2  # hopping parameter
+k = 1
 
 Lx = 2 # Number of sites in x direction
 Ly = 2 # Number of sites in y direction
@@ -26,8 +27,8 @@ ket = Ket(N, 0)  # 4 qubits, all in state |0>
 exp_val_exact = PauliOperators.expectation_value(o, ket)  # Initial expectation value of Z1
 
 # Define the generators and angles for the 2D Hubbard model
-generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o, Lx=Lx, Ly=Ly, t=t, U=u, k=1)
-#generators, parameters = UnitaryPruning.fermi_hubbard_2D(o, t=t, U=u, k=1)
+#generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o, Lx=Lx, Ly=Ly, t=t, U=u, k=1)
+generators, parameters = UnitaryPruning.fermi_hubbard_2D(o, t=t, U=u, k=k)
 
 println("* * * * Hamiltonian Generators and Parameters * * * *")
 for g in generators
@@ -89,10 +90,11 @@ for (g, p) in zip(generators, parameters)
 end
 
 println("Total number of generators: ", length(generators))
-println("Number of terms that move vacuum: ", length(terms))
-for t in terms
+for t in generators
     display(t)
 end
+println("Number of terms that move vacuum: ", length(terms))
+
 
 # Tests within matrix evaluation
 # Build exact fermionic operators as matrices
@@ -168,6 +170,7 @@ end
 H_mat = hubbard_2D_fermionic_matrix(o; Lx=Lx, Ly=Ly, t=t, U=u)
 
 # Compare the expectation value before and after evolution
+println("K-Steps :", k)
 println("Initial expectation value <Z1>: ", exp_val_exact)
 
 # Evolve the operator and compute exact evolution
@@ -187,20 +190,20 @@ for (g, p) in zip(generators, parameters)
     H .+= p * Matrix(g)
 end
 
-println("Is H Hermitian? ", ishermitian(H))
+#println("Is H Hermitian? ", ishermitian(H))
 
-Vacuum = zeros(ComplexF64, 2^N); Vacuum[1] = 1
-println("Vacuum energy ", Vacuum' * H * Vacuum)
+#Vacuum = zeros(ComplexF64, 2^N); Vacuum[1] = 1
+#println("Vacuum energy ", Vacuum' * H * Vacuum)
 
-Z1_op = Matrix(Pauli(N, Z=[1]))
-println("Vacuum <Z1> ", Vacuum' * Z1_op * Vacuum)
+#Z1_op = Matrix(Pauli(N, Z=[1]))
+#println("Vacuum <Z1> ", Vacuum' * Z1_op * Vacuum)
 
 # Evolve the operator with bfs_evolution
 exp_val_bfs, n_ops = UnitaryPruning.bfs_evolution(generators, parameters, PauliSum(o), ket; thresh=1e-6)
 #ei, nops = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
 
 println("BFS evolution expectation value <Z1>: ", exp_val_bfs)
-println("Number of operators during evolution: ", n_ops)   
+#println("Number of operators during evolution: ", n_ops)   
 
 
 # Evolve the operator with bfs_evolution_weight
@@ -209,4 +212,4 @@ w_type = "Pauli"  # "Majorana" or "Pauli"
 exp_val_bfs_w, n_ops_w = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type; max_weight=max_weight)
 #ei, nops = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight) 
 println("BFS (weight) evolution expectation value <Z1>: ", exp_val_bfs_w)
-println("Number of operators during (weight) evolution: ", n_ops_w)
+#println("Number of operators during (weight) evolution: ", n_ops_w)

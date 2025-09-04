@@ -167,6 +167,50 @@ end
 # # # # # # # # # # # # # # # #
 #- Models
 # # # # # # # # # # # # # # # #
+#
+# - - - 2D Transverse Field Ising Model (TFIM)
+#
+function get_unitary_sequence_2D_test(L; α=.01, k=10)
+    N = L^2
+    generators = Vector{Pauli{N}}([])
+    parameters = Vector{Float64}([])
+
+    # Helper: convert (row, col) -> site index
+    site(i, j) = (i - 1) * L + j
+
+    # Loop over trotter steps
+    for ki in 1:k
+        ## ZZ layer
+        # horizontal neighbors
+        for i in 1:L
+            for j in 1:(L-1)
+                pi = Pauli(N, Z=[site(i,j), site(i,j+1)])
+                push!(generators, pi)
+                push!(parameters, π/2)
+            end
+        end
+
+        # vertical neighbors
+        for i in 1:(L-1)
+            for j in 1:L
+                pi = Pauli(N, Z=[site(i,j), site(i+1,j)])
+                push!(generators, pi)
+                push!(parameters, π/2)
+            end
+        end
+
+        ## X layer
+        for i in 1:N
+            pi = Pauli(N, X=[i])
+            pi = Pauli{N}(-pi.s, pi.z, pi.x) # flip sign for -X convention
+            push!(generators, pi)
+            push!(parameters, α)
+        end
+    end
+
+    return generators, parameters
+end
+
 """
  1D linear chain version of the Heisenberg model
 """
@@ -478,7 +522,7 @@ function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int64, Ly::Int64, t::Floa
                 # Right neighbor (x+1)
                 if x < Lx
                     j = linear_index(x + 1, y)
-                    for (a_fn, b_fn) in [(up, up), (dn, dn)]
+                    for (a_fn, b_fn) in [(up, up), (up, up)]
                         a = a_fn(i)
                         b = b_fn(j)
                         H_hop += JWmapping(o, i=a, j=b)
@@ -489,7 +533,7 @@ function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int64, Ly::Int64, t::Floa
                 # Bottom neighbor (y+1)
                 if y < Ly
                     j = linear_index(x, y + 1)
-                    for (a_fn, b_fn) in [(up, up), (dn, dn)]
+                    for (a_fn, b_fn) in [(dn, dn), (dn, dn)]
                         a = a_fn(i)
                         b = b_fn(j)
                         H_hop += JWmapping(o, i=a, j=b)
@@ -538,88 +582,83 @@ function jw_transform(o::Pauli{N}, site) where N
     return 0.5*p
 end
 
-function fermi_hubbard_2D(o::Pauli{N}; t, U, k) where N
-    Nsites = Int(N/2)
-    L = Int(sqrt(Nsites))
+function fermi_hubbard_2D(o::Pauli{N}; t::Float64, U::Float64, k::Int) where N
+    Nsites = Int(N ÷ 2)          # number of lattice sites (each has 2 spin modes)
+    L = Int(round(sqrt(Nsites))) # linear dimension (assume square lattice)
+    if L*L != Nsites
+        throw(ArgumentError("N/2 must be a perfect square; got N=$N -> Nsites=$Nsites"))
+    end
+
     generators = Vector{Pauli{N}}()
     parameters = Vector{Float64}()
-    t_term = PauliSum(N)
-    u_term = PauliSum(N)
 
-    up(j) = 2*j - 1  
+    reverse_ordering = false
+
+    # Map logical site -> library site if Pauli uses reversed tensor convention
+    lib_site(site) = reverse_ordering ? (N - site + 1) : site
+
+    # spin mode indices (logical)
+    up(j) = 2*j - 1
     dn(j) = 2*j
-    linear_index(x, y) = (x-1)*L + y
-    
-    for ki in 1:k
+    linear_index(x,y) = (x-1)*L + y
+
+    jw_wrap(site_logical) = jw_transform(o, lib_site(site_logical))
+
+    # --- loop over k (time steps / repetitions) ---
+    for _ in 1:k
+        # Hopping term
         t_term = PauliSum(N)
 
-        for x in 1:L
-            for y in 1:L
-                j = linear_index(x, y)
-                if x < L
-                    # down coupling
-                    i = linear_index(x + 1, y)
+        for x in 1:L, y in 1:L
+            j = linear_index(x,y)
 
-                    # α-spin c{i, α}†c{j, α} + h.c.
-                    i_a = jw_transform(o, up(j))
-                    j_a = jw_transform(o, up(i))
+            if x < L
+                i = linear_index(x+1,y)
+                # up-spin hopping
+                ci = jw_wrap(up(i))
+                cj = jw_wrap(up(j))
+                t_term += ci * PauliOperators.adjoint(cj) + cj * PauliOperators.adjoint(ci)
+                # down-spin hopping
+                ci = jw_wrap(up(i))
+                cj = jw_wrap(up(j))
+                t_term += ci * PauliOperators.adjoint(cj) + cj * PauliOperators.adjoint(ci)
+            end
 
-                    t_term += i_a' * j_a
-                    t_term += j_a' * i_a
-
-                    # β-spin c{i, β}†c{j, β} + h.c. 
-                    i_b = jw_transform(o, dn(j))
-                    j_b = jw_transform(o, dn(i))
-                    t_term += i_b' * j_b
-                    t_term += j_b' * i_b  
-                end  
-
-                if y < L 
-                    # α-spin c{i, α}†c{j, α} + h.c.
-                    i = linear_index(x, y + 1)
-                    # right side coupling
-                    i_a = jw_transform(o, up(j))
-                    j_a = jw_transform(o, up(i))
-
-                    t_term += i_a' * j_a
-                    t_term += j_a' * i_a
-
-                    # β-spin c{i, β}†c{j, β} + h.c. 
-                    i_b = jw_transform(o, dn(j))
-                    j_b = jw_transform(o, dn(i))
-                    t_term += i_b' * j_b
-                    t_term += j_b' * i_b 
-                end
+            if y < L
+                i = linear_index(x,y+1)
+                # up-spin hopping
+                ci = jw_wrap(dn(i))
+                cj = jw_wrap(dn(j))
+                t_term += ci * PauliOperators.adjoint(cj) + cj * PauliOperators.adjoint(ci)
+                # down-spin hopping
+                ci = jw_wrap(dn(i))
+                cj = jw_wrap(dn(j))
+                t_term += ci * PauliOperators.adjoint(cj) + cj * PauliOperators.adjoint(ci)
             end
         end
 
         for (pauli, coeff) in t_term
-            if coeff == 0.0
-                continue
+            if coeff != 0.0
+                push!(generators, Pauli(pauli))
+                push!(parameters, -t * coeff)
             end
-            push!(generators, Pauli(pauli))
-            push!(parameters, -t*coeff)
-        end 
+        end
 
+        # On-site interaction term
         u_term = PauliSum(N)
-
         for j in 1:Nsites
-            # interacting term
-            i_a = jw_transform(o, up(j))
-            i_b = jw_transform(o, dn(j))
-
-            u_term += i_a'*i_a*i_b'*i_b
-            # println("Interaction")
-            # display(u_term)
+            cu = jw_wrap(up(j))
+            cd = jw_wrap(dn(j))
+            u_term += (cu * PauliOperators.adjoint(cu)) * (cd * PauliOperators.adjoint(cd))
         end
 
         for (pauli, coeff) in u_term
-            if coeff == 0.0
-                continue
+            if coeff != 0.0
+                push!(generators, Pauli(pauli))
+                push!(parameters, U * coeff)
             end
-            push!(generators, Pauli(pauli))
-            push!(parameters, U*coeff)
         end
     end
-    return generators, parameters#, -t*t_term + U*u_term
+
+    return generators, parameters
 end

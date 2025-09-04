@@ -230,9 +230,9 @@ end
 
 function clip_thresh_weight!(ps::PauliSum{N}; thresh=1e-16, lc = 0, w_type = 0) where {N}
     if w_type == 0 
-        filter!(p->(weight(p.first) ≤ lc) && (abs(p.second) ≥ thresh) , ps.ops)
+        filter!(p->(PauliOperators.pauli_weight(p.first) ≤ lc) && (abs(p.second) ≥ thresh) , ps)
     else
-        filter!(p->(majorana_weight(p.first) ≤ lc) && (abs(p.second) ≥ thresh) , ps.ops)
+        filter!(p->(PauliOperators.simple_majorana_weight(p.first) ≤ lc) && (abs(p.second) ≥ thresh) , ps)
     end     
 end
 
@@ -296,4 +296,74 @@ function bfs_evolution_weight_clip(generators::Union{Vector{Pauli{N}},Vector{Pau
     end
    
     return expval, n_ops
+end
+
+"""
+ The following function performs the bfs evolution performing the coefficient thresholding in combination with the weight cutoff pruning.
+"""
+function bfs_evolution_thresh_weight(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket ; thresh=1e-3, w_type = 0, w = 2) where {N}
+
+    #
+    # for a single pauli Unitary, U = exp(-i θn Pn/2)
+    # U' O U = cos(θ) O + i sin(θ) OP
+    nt = length(angles)
+    length(angles) == nt || throw(DimensionMismatch)
+    vcos = cos.(angles)
+    vsin = sin.(angles)
+
+    # collect our results here...
+    expval = zero(ComplexF64)
+
+
+    o_transformed = deepcopy(o)
+    sin_branch = PauliSum(N)
+ 
+    n_ops = zeros(Int,nt)
+    
+    for t in 1:nt
+
+        g = generators[t]
+
+        sin_branch = PauliSum(N)
+
+        for (oi, coeff) in o_transformed
+           
+            abs(coeff) > thresh || continue
+
+            if PauliOperators.commute(oi, PauliBasis(g)) == false
+                
+                # cos branch
+                o_transformed[oi] = coeff * vcos[t]
+
+                # sin branch
+                oj = g * oi    # multiply the pauli's
+                sum!(sin_branch, oj * vsin[t] * coeff * 1im)
+  
+            end
+        end
+        sum!(o_transformed, sin_branch) 
+        # clip!(o_transformed, thresh=thresh)
+        clip_thresh_weight!(o_transformed, thresh=thresh, lc = w, w_type = w_type)
+        # if w_type == 0
+
+        #     weightclip!(o_transformed, lc = w)
+
+        # elseif w_type == 1 
+
+        #     majorana_clip!(o_transformed, lc = w)
+
+        # end
+
+        n_ops[t] = length(o_transformed)
+    end
+
+    coeff_norm2 = 0
+
+    for (oi,coeff) in o_transformed
+        expval += coeff*PauliOperators.expectation_value(oi, ket)
+        coeff_norm2+= abs(coeff)^2      # final list of operators
+    end
+    coeff_norm2 = sqrt(coeff_norm2)
+
+    return expval, n_ops, coeff_norm2
 end

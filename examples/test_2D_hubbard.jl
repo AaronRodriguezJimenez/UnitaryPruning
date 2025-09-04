@@ -249,7 +249,7 @@ function run(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k=1 , w_type = "Majorana", max_
 
     #Create generators and parameters for the model
     #generators, parameters = hubbard_model_2D(o, Lx=Lx, Ly=Ly, t=t, U=U, k=k)
-    generators, parameters = hubbard_model_2D_interleaved(o, Lx=Lx, Ly=Ly, t=t, U=U, k=k)
+    generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o, Lx=Lx, Ly=Ly, t=t, U=U, k=k)
     
     #Call to bfs bfs_evolution_test based on weight
 
@@ -346,7 +346,7 @@ function properties_table(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k = 1, max_weights
     save_results(filename_pauli, results_pauli)
 end
 
-Us = [10.0]#, 4.0, 6.0, 8.0, 10.0, 12.0]
+Us = [2.0]#, 4.0, 6.0, 8.0, 10.0, 12.0]
 ks = [1,2,5,10]
 for u in Us
     for k in ks
