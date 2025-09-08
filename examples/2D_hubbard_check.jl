@@ -234,7 +234,7 @@ println("Initial expectation value <Z1>: ", exp_val_exact)
 #Z1_op = Matrix(Pauli(N, Z=[1]))
 #println("Vacuum <Z1> ", Vacuum' * Z1_op * Vacuum)
 
-# Evolve the operator with bfs_evolution
+# Evolve the operator with bfs_evolution 
 thresh = 1e-3  
 
 exp_val_bfs, n_ops = UnitaryPruning.bfs_evolution(generators, parameters, PauliSum(o), ket; thresh=thresh)
