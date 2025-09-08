@@ -465,6 +465,122 @@ function hubbard_model_2D_block(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64, U::Fl
     return generators, parameters
 end
 
+
+# # # # # # # # # # # # # # #
+#- - - Hubbard model Chinmay version (improved) - - -
+# Helpers: build creation operator (c^†) as Pauli/PauliSum and build bilinear c_i^† c_j + h.c.
+function creation_pauli(o::Pauli{N}, mode::Int; reverse_ordering::Bool=false) where N
+    # mode is the spin-orbital index in [1, 2*Nsites]
+    lib = reverse_ordering ? (N - mode + 1) : mode
+    z_string = lib > 1 ? collect(1:lib-1) : Int[]
+    return 0.5 * (Pauli(N, Z = z_string, X = [lib]) + 1im * Pauli(N, Z = z_string, Y = [lib]))
+end
+
+function fermionic_bilinear_pauli(o::Pauli{N}, m::Int, n::Int; reverse_ordering::Bool=false) where N
+    # returns PauliSum representing c_m^† c_n + c_n^† c_m
+    cd_m = creation_pauli(o, m; reverse_ordering = reverse_ordering)
+    cd_n = creation_pauli(o, n; reverse_ordering = reverse_ordering)
+    return cd_m * PauliOperators.adjoint(cd_n) + cd_n * PauliOperators.adjoint(cd_m)
+end
+
+"""
+    fermi_hubbard_2D_pauli(o::Pauli{N}; Lx, Ly, t, U, k, reverse_ordering=false)
+
+Construct generators and parameters for the 2D spinful Hubbard model on Lx×Ly
+(physical sites). Each physical site has two spin-orbitals (up, down), so
+total qubits N must equal 2 * Lx * Ly.
+
+Returns (generators::Vector{Pauli{N}}, parameters::Vector{Float64}).
+"""
+function fermi_hubbard_2D_pauli(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64=1.0, U::Float64=2.0, k::Int=1) where N
+    Nsites = Lx * Ly
+    reverse_ordering = false
+    if 2 * Nsites != N
+        throw(ArgumentError("Total qubits N must equal 2 * Lx * Ly. Got N=$N, Lx*Ly=$Nsites"))
+    end
+
+    generators = Vector{Pauli{N}}()
+    parameters = Vector{Float64}()
+
+    up(j) = 2*j - 1
+    dn(j) = 2*j
+    linear_index(x,y) = (x - 1) * Ly + y   # x in 1:Lx, y in 1:Ly
+
+    # small tolerance for dropping tiny coeffs
+    eps_coeff = 1e-12
+
+    for _ in 1:k
+        # HOPPING: loop nearest-neighbour pairs once, add c_i^† c_j + c_j^† c_i (both spins)
+        for x in 1:Lx, y in 1:Ly
+            jsite = linear_index(x, y)
+
+            # neighbor +x (right in x)
+            if x < Lx
+                isite = linear_index(x + 1, y)
+                for spin in (up, dn)
+                    m = spin(jsite)   # mode index for j
+                    n = spin(isite)   # mode index for i
+                    term = fermionic_bilinear_pauli(o, m, n; reverse_ordering = reverse_ordering)
+                    for (pauli, coeff) in term
+                        if abs(coeff) < eps_coeff
+                            continue
+                        end
+                        if abs(imag(coeff)) > 1e-12
+                            error("Non-real coefficient encountered in hopping term: $coeff")
+                        end
+                        push!(generators, Pauli(pauli))
+                        push!(parameters, -t * real(coeff))
+                    end
+                end
+            end
+
+            # neighbor +y (right in y)
+            if y < Ly
+                isite = linear_index(x, y + 1)
+                for spin in (up, dn)
+                    m = spin(jsite)
+                    n = spin(isite)
+                    term = fermionic_bilinear_pauli(o, m, n; reverse_ordering = reverse_ordering)
+                    for (pauli, coeff) in term
+                        if abs(coeff) < eps_coeff
+                            continue
+                        end
+                        if abs(imag(coeff)) > 1e-12
+                            error("Non-real coefficient encountered in hopping term: $coeff")
+                        end
+                        push!(generators, Pauli(pauli))
+                        push!(parameters, -t * real(coeff))
+                    end
+                end
+            end
+        end
+
+        # ONSITE U term: n_up * n_down on each site
+        for site in 1:Nsites
+            m_up = up(site)
+            m_dn = dn(site)
+            cd_up = creation_pauli(o, m_up; reverse_ordering = reverse_ordering)
+            cd_dn = creation_pauli(o, m_dn; reverse_ordering = reverse_ordering)
+            n_up = cd_up * PauliOperators.adjoint(cd_up)    # c^† c
+            n_dn = cd_dn * PauliOperators.adjoint(cd_dn)
+            term = n_up * n_dn
+            for (pauli, coeff) in term
+                if abs(coeff) < eps_coeff
+                    continue
+                end
+                if abs(imag(coeff)) > 1e-12
+                    error("Non-real coefficient encountered in U term: $coeff")
+                end
+                push!(generators, Pauli(pauli))
+                push!(parameters, U * real(coeff))
+            end
+        end
+    end
+
+    return generators, parameters
+end
+
+
 """
  Same logic, interleaved version:
  Constructs the Jordan-Wigner transformed 2D Fermi-Hubbard model on an Lx × Ly square lattice
@@ -488,174 +604,83 @@ where:
 Only nearest-neighbor interactions along the x and y directions are included.
 Open boundary conditions (OBC) are used by default.
 """
-function isidentity(p::Pauli{N}) where {N}
-    pstring = string(p)
-    return all(c -> c == 'I', pstring)
-end
-
 function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int64, Ly::Int64, t::Float64, U::Float64, k::Int64) where N
-    D = Lx * Ly  # number of lattice sites
-
-    generators = Vector{Pauli{N}}()
-    parameters = Vector{Float64}()
-
-    H_hop = PauliSum(N)
-    H_u = PauliSum(N)
-
-    # 1-based linear index
-    linear_index(x, y) = (y - 1) * Lx + x  # returns 1 to D
-
-    # Spin-orbital index: ↑ = 2j - 1, ↓ = 2j
-    up(j) = 2*j - 1
-    dn(j) = 2*j
-
-    for kl in 1:k
-
-        H_hop = PauliSum(N)
-        H_u = PauliSum(N)
-
-        # Loop over 1-based coordinates
-        for x in 1:Lx
-            for y in 1:Ly
-                i = linear_index(x, y)
-
-                # Right neighbor (x+1)
-                if x < Lx
-                    j = linear_index(x + 1, y)
-                    for (a_fn, b_fn) in [(up, up), (up, up)]
-                        a = a_fn(i)
-                        b = b_fn(j)
-                        H_hop += JWmapping(o, i=a, j=b)
-                        H_hop += JWmapping(o, i=b, j=a)
-                    end
-                end
-
-                # Bottom neighbor (y+1)
-                if y < Ly
-                    j = linear_index(x, y + 1)
-                    for (a_fn, b_fn) in [(dn, dn), (dn, dn)]
-                        a = a_fn(i)
-                        b = b_fn(j)
-                        H_hop += JWmapping(o, i=a, j=b)
-                        H_hop += JWmapping(o, i=b, j=a)
-                    end
-                end
-            end
-        end
-
-        # Add hopping terms
-        for (pauli, coeff) in H_hop
-            if coeff == 0.0
-                continue
-            end
-            push!(generators, Pauli(pauli))
-            push!(parameters, -t * coeff)
-        end
-
-        # On-site interaction terms
-        for site in 1:D
-            a_up = up(site)
-            a_dn = dn(site)
-            H_u += JWmapping(o, i=a_up, j=a_up) * JWmapping(o, i=a_dn, j=a_dn)
-        end
-
-        for (pauli, coeff) in H_u
-            if coeff == 0.0
-                continue
-            end
-            #println("C_u:", coeff)
-            push!(generators, Pauli(pauli))
-            push!(parameters, U * coeff)
-        end
-    end
-
-    return generators, parameters
-end
-
-# # # # # # # # # # # # # # #
-#- - - Hubbard model Chinmay version - - -
-
-function jw_transform(o::Pauli{N}, site) where N
-    z_string = [i for i in 1:site-1]
-    # p = PauliSum(N)
-    p = Pauli(N, Z = z_string, X = [site]) + 1im * Pauli(N, Z=z_string, Y=[site])
-    return 0.5*p
-end
-
-function fermi_hubbard_2D(o::Pauli{N}; t::Float64, U::Float64, k::Int) where N
-    Nsites = Int(N ÷ 2)          # number of lattice sites (each has 2 spin modes)
-    L = Int(round(sqrt(Nsites))) # linear dimension (assume square lattice)
-    if L*L != Nsites
-        throw(ArgumentError("N/2 must be a perfect square; got N=$N -> Nsites=$Nsites"))
-    end
-
-    generators = Vector{Pauli{N}}()
-    parameters = Vector{Float64}()
-
+    Nsites = Lx * Ly
     reverse_ordering = false
+    if 2 * Nsites != N
+        throw(ArgumentError("Total qubits N must equal 2 * Lx * Ly. Got N=$N, Lx*Ly=$Nsites"))
+    end
 
-    # Map logical site -> library site if Pauli uses reversed tensor convention
-    lib_site(site) = reverse_ordering ? (N - site + 1) : site
+    generators = Vector{Pauli{N}}()
+    parameters = Vector{Float64}()
 
-    # spin mode indices (logical)
     up(j) = 2*j - 1
     dn(j) = 2*j
-    linear_index(x,y) = (x-1)*L + y
+    linear_index(x,y) = (x - 1) * Ly + y   # x in 1:Lx, y in 1:Ly
 
-    jw_wrap(site_logical) = jw_transform(o, lib_site(site_logical))
+    # small tolerance for dropping tiny coeffs
+    eps_coeff = 1e-12
 
-    # --- loop over k (time steps / repetitions) ---
     for _ in 1:k
-        # Hopping term
-        t_term = PauliSum(N)
+        # HOPPING: loop nearest-neighbour pairs once, add c_i^† c_j + c_j^† c_i (both spins)
+        for x in 1:Lx, y in 1:Ly
+            jsite = linear_index(x, y)
 
-        for x in 1:L, y in 1:L
-            j = linear_index(x,y)
-
-            if x < L
-                i = linear_index(x+1,y)
-                # up-spin hopping
-                ci = jw_wrap(up(i))
-                cj = jw_wrap(up(j))
-                t_term += ci * PauliOperators.adjoint(cj) + cj * PauliOperators.adjoint(ci)
-                # down-spin hopping
-                ci = jw_wrap(up(i))
-                cj = jw_wrap(up(j))
-                t_term += ci * PauliOperators.adjoint(cj) + cj * PauliOperators.adjoint(ci)
+            # neighbor +x (right in x)
+            if x < Lx
+                isite = linear_index(x + 1, y)
+                for spin in (up, dn)
+                    m = spin(jsite)   # mode index for j
+                    n = spin(isite)   # mode index for i
+                    term = JWmapping(o, i=n, j=m) + JWmapping(o, i=m, j=n)
+                    for (pauli, coeff) in term
+                        if abs(coeff) < eps_coeff
+                            continue
+                        end
+                        if abs(imag(coeff)) > 1e-12
+                            error("Non-real coefficient encountered in hopping term: $coeff")
+                        end
+                        push!(generators, Pauli(pauli))
+                        push!(parameters, -t * real(coeff))
+                    end
+                end
             end
 
-            if y < L
-                i = linear_index(x,y+1)
-                # up-spin hopping
-                ci = jw_wrap(dn(i))
-                cj = jw_wrap(dn(j))
-                t_term += ci * PauliOperators.adjoint(cj) + cj * PauliOperators.adjoint(ci)
-                # down-spin hopping
-                ci = jw_wrap(dn(i))
-                cj = jw_wrap(dn(j))
-                t_term += ci * PauliOperators.adjoint(cj) + cj * PauliOperators.adjoint(ci)
+            # neighbor +y (right in y)
+            if y < Ly
+                isite = linear_index(x, y + 1)
+                for spin in (up, dn)
+                    m = spin(jsite)
+                    n = spin(isite)
+                    term = JWmapping(o, i=n, j=m) + JWmapping(o, i=m, j=n)
+                    for (pauli, coeff) in term
+                        if abs(coeff) < eps_coeff
+                            continue
+                        end
+                        if abs(imag(coeff)) > 1e-12
+                            error("Non-real coefficient encountered in hopping term: $coeff")
+                        end
+                        push!(generators, Pauli(pauli))
+                        push!(parameters, -t * real(coeff))
+                    end
+                end
             end
         end
 
-        for (pauli, coeff) in t_term
-            if coeff != 0.0
+        # ONSITE U term: n_up * n_down on each site
+        for site in 1:Nsites
+            m_up = up(site)
+            m_dn = dn(site)
+            term = JWmapping(o, i=m_up, j=m_up) * JWmapping(o, i=m_dn, j=m_dn)
+            for (pauli, coeff) in term
+                if abs(coeff) < eps_coeff
+                    continue
+                end
+                if abs(imag(coeff)) > 1e-12
+                    error("Non-real coefficient encountered in U term: $coeff")
+                end
                 push!(generators, Pauli(pauli))
-                push!(parameters, -t * coeff)
-            end
-        end
-
-        # On-site interaction term
-        u_term = PauliSum(N)
-        for j in 1:Nsites
-            cu = jw_wrap(up(j))
-            cd = jw_wrap(dn(j))
-            u_term += (cu * PauliOperators.adjoint(cu)) * (cd * PauliOperators.adjoint(cd))
-        end
-
-        for (pauli, coeff) in u_term
-            if coeff != 0.0
-                push!(generators, Pauli(pauli))
-                push!(parameters, U * coeff)
+                push!(parameters, U * real(coeff))
             end
         end
     end

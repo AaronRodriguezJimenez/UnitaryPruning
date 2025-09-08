@@ -125,4 +125,4 @@ function run(; N=10,threshold = 1e-3, dt=0.1, T=10)
     return
 end
 
-run(N = 8, threshold = 1e-3, dt = 0.1, T = 10)
+run(N = 60, threshold = 1e-3, dt = 1.0, T = 100)

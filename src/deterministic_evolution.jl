@@ -300,6 +300,9 @@ end
 
 """
  The following function performs the bfs evolution performing the coefficient thresholding in combination with the weight cutoff pruning.
+    w_type = 0 : Pauli weight
+    w_type = 1 : Majorana weight
+    w : weight cutoff
 """
 function bfs_evolution_thresh_weight(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ket ; thresh=1e-3, w_type = 0, w = 2) where {N}
 

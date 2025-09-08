@@ -110,13 +110,15 @@ function run_weights()
     end
 end
 
-function run_ops(; N=10, k=5, thresh=1e-3, w_type = 0, w = 2)
+function run_ops(Lx; N=10, k=5, thresh=1e-3, w_type = 0, w = 2)
    
     ket = Ket(N, 0) 
     o = Pauli(N, Z=[1])
 
     # generators, parameters = UnitaryPruning.fermi_hubbard_1D(o, t = 1, U = 6, k=k)
-    generators, parameters = UnitaryPruning.fermi_hubbard_2D(o, t = 1, U = 2, k=k)
+    #generators, parameters = UnitaryPruning.fermi_hubbard_2D(o, t = 1.0, U = 2.0, k=k)
+    #generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o; Lx=Lx, Ly=Lx, t=1.0, U=2.0, k=k)
+    generators, parameters = UnitaryPruning.fermi_hubbard_2D_pauli(o; Lx=Lx, Ly=Lx, t=1.0, U=2.0, k=k)
 
     ei , nops, c_norm2 = UnitaryPruning.bfs_evolution_thresh_weight(generators, parameters, PauliSum(o), ket, thresh=thresh, w_type = w_type, w = w)
     
@@ -128,15 +130,16 @@ function run_ops(; N=10, k=5, thresh=1e-3, w_type = 0, w = 2)
 end
 
 function run_weights_and_ops(run_weights_plot::Bool = true, run_ops_plot::Bool = true)
+    Lx = 3 # linear modes (for hubbard model 2_interleaved version)
     L = 9    # Total fermionic modes 4 for a 2x2 lattice, 9 for a 3x3 lattice and so on...
     N = 2*L  # Total Qubits 
     o = Pauli(N, Z=[1])
-    new_set_k = [1]#2 , 4, 8, 10]
+    new_set_k = [8]
 
-    #thresholds = [1e-3, 1e-4]
-    thresholds = [-1]
+    thresholds = [1e-3, 1e-4]
+    #thresholds = [-1]
 
-    weights = [2*N] #[i for i in 1:2*N]
+    weights = [i for i in 1:10]#2*N]
 
     for k in new_set_k
         println("k: ", k)
@@ -165,7 +168,7 @@ function run_weights_and_ops(run_weights_plot::Bool = true, run_ops_plot::Bool =
                     println("Weight Threshold: ", w)
                     # ev = run(N=N, k=k, thresh=thresh, w_type=w_type, w=w)
 
-                    ev, nops, _ = run_ops(N=N, k=k, thresh=thresh, w_type=w_type, w=w)
+                    ev, nops, _ = run_ops(Lx, N=N, k=k, thresh=thresh, w_type=w_type, w=w)
                     push!(op_counts, nops)
                     push!(P_expval, ev)
                     #push!(p_errors, abs(real(m[1]) - real(ev)))

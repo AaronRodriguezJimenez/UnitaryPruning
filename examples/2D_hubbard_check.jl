@@ -15,10 +15,10 @@ using PauliOperators
 #- - - Check the expectation value o Z1
 u = 2.0#0.3  # On-site interaction strength
 t = 1.0#0.2  # hopping parameter
-k = 1
+k = 8
 
-Lx = 2 # Number of sites in x direction
-Ly = 2 # Number of sites in y direction
+Lx = 3 # Number of sites in x direction
+Ly = 3 # Number of sites in y direction
 N = 2*Lx*Ly # Number of qubits
 
 o = Pauli(N, Z=[1])  # Observable Z1
@@ -27,8 +27,8 @@ ket = Ket(N, 0)  # 4 qubits, all in state |0>
 exp_val_exact = PauliOperators.expectation_value(o, ket)  # Initial expectation value of Z1
 
 # Define the generators and angles for the 2D Hubbard model
-#generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o, Lx=Lx, Ly=Ly, t=t, U=u, k=1)
-generators, parameters = UnitaryPruning.fermi_hubbard_2D(o, t=t, U=u, k=k)
+generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o, Lx=Lx, Ly=Ly, t=t, U=u, k=k)
+#generators, parameters = UnitaryPruning.fermi_hubbard_2D_pauli(o,Lx=Lx, Ly=Ly, t=t, U=u, k=k)
 
 println("* * * * Hamiltonian Generators and Parameters * * * *")
 for g in generators
@@ -78,16 +78,16 @@ end
 vac = Ket(N, 0)
 terms = Vector{Pauli{N}}()
 
-println("Transformation of the Initial vacuum state:")
-for (g, p) in zip(generators, parameters)
-    v0 = Vector(vac)    
-    new_vac = Matrix(g) * v0
-
-    if new_vac != v0
-        #display(g*vac)
-        push!(terms, g)
-    end
-end
+# Check which generators move the vacuum
+#println("Transformation of the Initial vacuum state:")
+#for (g, p) in zip(generators, parameters)
+#    v0 = Vector(vac)    
+#    new_vac = Matrix(g) * v0
+#if new_vac != v0
+#        #display(g*vac)
+#        push!(terms, g)
+#    end
+#end
 
 println("Total number of generators: ", length(generators))
 for t in generators
@@ -167,28 +167,64 @@ function hubbard_2D_fermionic_matrix(o::Pauli{N}; Lx::Int64, Ly::Int64, t::Float
     return Matrix(H_total)
 end
 
-H_mat = hubbard_2D_fermionic_matrix(o; Lx=Lx, Ly=Ly, t=t, U=u)
+#H_mat = hubbard_2D_fermionic_matrix(o; Lx=Lx, Ly=Ly, t=t, U=u)
+
+function check_bilinears_against_matrix(o::Pauli{N}, Lx::Int, Ly::Int; reverse_ordering::Bool=false) where N
+    Nsites = Lx * Ly
+    if 2*Nsites != N
+        throw(ArgumentError("N mismatch"))
+    end
+    up(j) = 2*j - 1
+    dn(j) = 2*j
+    linear_index(x,y) = (x - 1) * Ly + y
+
+    for x in 1:Lx, y in 1:Ly
+        jsite = linear_index(x,y)
+        if x < Lx
+            isite = linear_index(x+1,y)
+            for spinfun in (up, dn)
+                m = spinfun(jsite)
+                n = spinfun(isite)
+                pauli_mat = mat(fermionic_bilinear_pauli(o, m, n; reverse_ordering=reverse_ordering))
+                ferm_mat  = fermionic_bilinear(N, m, n)   # your working function
+                d = maximum(abs.(pauli_mat - ferm_mat))
+                println("pair (",m,",",n,") max abs diff = ", d)
+            end
+        end
+        if y < Ly
+            isite = linear_index(x,y+1)
+            for spinfun in (up, dn)
+                m = spinfun(jsite)
+                n = spinfun(isite)
+                pauli_mat = mat(fermionic_bilinear_pauli(o, m, n; reverse_ordering=reverse_ordering))
+                ferm_mat  = fermionic_bilinear(N, m, n)
+                d = maximum(abs.(pauli_mat - ferm_mat))
+                println("pair (",m,",",n,") max abs diff = ", d)
+            end
+        end
+    end
+end
 
 # Compare the expectation value before and after evolution
 println("K-Steps :", k)
 println("Initial expectation value <Z1>: ", exp_val_exact)
 
 # Evolve the operator and compute exact evolution
-U = UnitaryPruning.build_time_evolution_matrix(generators, parameters)
-o_mat = Matrix(o)
-m = diag(U'*o_mat*U)
-println("Exact expectation value <Z1> after bfs evolution: ", m[1])
+#U = UnitaryPruning.build_time_evolution_matrix(generators, parameters)
+#o_mat = Matrix(o)
+#m = diag(U'*o_mat*U)
+#println("Exact expectation value <Z1> after bfs evolution: ", m[1])
 
 # Perform computation with this matrix
-U_exact = exp(-1im * H_mat)
-m2 = diag(U_exact'*o_mat*U_exact)
-println("Exact expectation value <Z1> after evolution (matrix method): ", m2[1])
+#U_exact = exp(-1im * H_mat)
+#m2 = diag(U_exact'*o_mat*U_exact)
+#println("Exact expectation value <Z1> after evolution (matrix method): ", m2[1])
 
 # Further tests with the Hamiltonian from unitary sequences
-H = zeros(ComplexF64, 2^N, 2^N)
-for (g, p) in zip(generators, parameters)
-    H .+= p * Matrix(g)
-end
+#H = zeros(ComplexF64, 2^N, 2^N)
+#for (g, p) in zip(generators, parameters)
+#    H .+= p * Matrix(g)
+#end
 
 #println("Is H Hermitian? ", ishermitian(H))
 
@@ -199,17 +235,21 @@ end
 #println("Vacuum <Z1> ", Vacuum' * Z1_op * Vacuum)
 
 # Evolve the operator with bfs_evolution
-exp_val_bfs, n_ops = UnitaryPruning.bfs_evolution(generators, parameters, PauliSum(o), ket; thresh=1e-6)
-#ei, nops = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight)
+thresh = 1e-3  
 
+exp_val_bfs, n_ops = UnitaryPruning.bfs_evolution(generators, parameters, PauliSum(o), ket; thresh=thresh)
 println("BFS evolution expectation value <Z1>: ", exp_val_bfs)
 #println("Number of operators during evolution: ", n_ops)   
 
-
 # Evolve the operator with bfs_evolution_weight
-max_weight = 2
+max_weight = 6
 w_type = "Pauli"  # "Majorana" or "Pauli"
 exp_val_bfs_w, n_ops_w = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type; max_weight=max_weight)
-#ei, nops = UnitaryPruning.bfs_evolution_weight(generators, parameters, PauliSum(o), ket, w_type, max_weight=max_weight) 
 println("BFS (weight) evolution expectation value <Z1>: ", exp_val_bfs_w)
 #println("Number of operators during (weight) evolution: ", n_ops_w)
+
+w_type = 0  # "1-Majorana" or "0-Pauli"
+ei , nops, c_norm2 = UnitaryPruning.bfs_evolution_thresh_weight(generators, parameters, PauliSum(o), ket, thresh=thresh, w_type = 0, w = max_weight)
+println("BFS (thresh+weight) evolution expectation value <Z1>: ", ei)
+#println("Number of operators during (thresh+weight) evolution: ", nops)
+println("=================================")
