@@ -130,16 +130,16 @@ function run_ops(Lx; N=10, k=5, thresh=1e-3, w_type = 0, w = 2)
 end
 
 function run_weights_and_ops(run_weights_plot::Bool = true, run_ops_plot::Bool = true)
-    Lx = 3 # linear modes (for hubbard model 2_interleaved version)
-    L = 9    # Total fermionic modes 4 for a 2x2 lattice, 9 for a 3x3 lattice and so on...
+    Lx = 2 # linear modes (for hubbard model 2_interleaved version)
+    L = 4   # Total fermionic modes 4 for a 2x2 lattice, 9 for a 3x3 lattice and so on...
     N = 2*L  # Total Qubits 
     o = Pauli(N, Z=[1])
-    new_set_k = [8]
+    new_set_k = [2,4,8,10]
 
     thresholds = [1e-3, 1e-4]
     #thresholds = [-1]
 
-    weights = [i for i in 1:10]#2*N]
+    weights = [i for i in 1:15]#2*N]
 
     for k in new_set_k
         println("k: ", k)

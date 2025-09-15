@@ -370,3 +370,56 @@ function bfs_evolution_thresh_weight(generators::Vector{Pauli{N}}, angles, o::Pa
 
     return expval, n_ops, coeff_norm2
 end
+
+"""
+    bfs_evolution_vqe(generators::Vector{Pauli{N}}, angles, o::Pauli{N}, ket ; thres=1e-3) where {N}
+    This function is used for VQE type calculations where we evolve the target operator under the action
+    of a given operator pool, this initial function uses a thresholding pruning scheme to limit the number of operators.
+    It Returns the evolved operator for further processing, and works with one operator at a time.
+
+"""
+function bfs_evolution_vqe(generators::Union{Vector{Pauli{N}},Vector{PauliBasis{N}}}, angles, o::PauliSum{N}; thresh=1e-3) where {N}
+
+    #
+    # for a single pauli Unitary, U = exp(-i θn Pn/2)
+    # U' O U = cos(θ/2) O + i sin(θ/2) OP
+    nt = length(angles)
+    length(angles) == nt || throw(DimensionMismatch)
+    
+    vcos = cos.(angles)
+    vsin = sin.(angles)
+
+    o_transformed = deepcopy(o)
+  
+    n_ops = zeros(Int,nt)
+    
+    for t in 1:nt
+
+        g = generators[t]
+
+        sin_branch = PauliSum(N)
+
+        for (oi,coeff) in o_transformed
+           
+           # abs(coeff) > thresh || continue
+
+
+            if PauliOperators.commute(oi, PauliBasis(g)) == false
+                
+                # cos branch
+                o_transformed[oi] = coeff * vcos[t]
+
+                # sin branch
+                oj = g * oi    # multiply the pauli's
+                sum!(sin_branch, oj * vsin[t] * coeff * 1im)
+
+            end
+        end
+        sum!(o_transformed, sin_branch) 
+        clip!(o_transformed, thresh=thresh)
+        n_ops[t] = length(o_transformed)
+    end
+
+      
+    return o_transformed
+end
