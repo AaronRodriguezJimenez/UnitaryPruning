@@ -165,4 +165,50 @@ function plot_abs_error_vs_weight_pdf(; N=4, w_type="Pauli", max_weights=0:2:6)
     println("Plot saved as $filename")
 end
     
-plot_abs_error_vs_weight_pdf(N=12, w_type="Pauli", max_weights=1:2:12)
+#plot_abs_error_vs_weight_pdf(N=12, w_type="Pauli", max_weights=1:2:12)
+
+# Test 1D Hubbard model
+#
+function test_hubbard_1D()
+    L = 3
+    t = 1.0
+    U = 2.0
+    k = 1
+    N = 2 * L  # Total qubits for spinful model
+
+    o = Pauli(N)
+    generators, parameters = UnitaryPruning.hubbard_model_1D(o; L=L, t=t, U=U, k=k)
+
+    println("1D Hubbard model generators and parameters:")
+    for (gen, param) in zip(generators, parameters)
+        #println(" Parameter: ", param)
+        display(gen)
+    end
+    println("Total generators: ", length(generators))
+    println("Parameters: ", parameters)
+
+end
+
+test_hubbard_1D()
+
+function test_hubbard_2D()
+    Lx = 1
+    Ly = 10
+    t = 1.0
+    U = 2.0
+    k = 1
+    N = 2 * Lx * Ly  # Total qubits for spinful model
+
+    o = Pauli(N)
+    generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o; Lx=Lx, Ly=Ly, t=t, U=U, k=k)
+
+    println("2D Hubbard model generators and parameters:")
+    for (gen, param) in zip(generators, parameters)
+        #println("Generator: ", gen, ", Parameter: ", param)
+        display(gen)
+    end
+    println("Total generators: ", length(generators))
+
+end
+
+#test_hubbard_2D()

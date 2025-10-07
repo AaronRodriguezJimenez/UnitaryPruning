@@ -45,7 +45,7 @@ function evolution_otoc(generators::Vector{Pauli{N}}, angles, o::PauliSum{N}, ke
     dicts = Vector(undef, nt)    
     sin_branch = PauliSum(N)
 
-     otoc[1] = real(expectation_value(o, ket))
+    otoc[1] = real(expectation_value(o, ket))
     
     for t in 1:nt
 
@@ -125,4 +125,8 @@ function run(; N=10,threshold = 1e-3, dt=0.1, T=10)
     return
 end
 
-run(N = 60, threshold = 1e-3, dt = 1.0, T = 100)
+#run(N = 20, threshold = 1e-3, dt = 0.01, T = 10)
+thresholds = [1e-1, 1e-2, 1e-3, 1e-4]
+for thresh in thresholds
+    run(N = 10, threshold = thresh, dt = 0.1, T = 10)
+end

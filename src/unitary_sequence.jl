@@ -270,21 +270,82 @@ end
     a,b, - indices of the modes to be mapped
     returns term = c^dagger_a * c_b
 """
+#function JWmapping(o::Pauli{N}; i::Int, j::Int) where N
+#    # Compute C^dagger_i term
+#    ax_term = Pauli(2^(i-1)-1, 2^(i-1), N)
+#    ay_term = Pauli(2^(i)-1, 2^(i-1), N)
+#    c_dagg_a = 0.5 * (ax_term - ay_term)
+#
+#    # Compute C_j term
+#    bx_term = Pauli(2^(j-1)-1, 2^(j-1), N)
+#    by_term = Pauli(2^(j)-1, 2^(j-1), N)
+#    c_b = 0.5 * (bx_term + by_term)
+#
+#    # Build C^dagger_i*C_j
+#    term =  c_dagg_a*c_b
+#
+#    return term
+#end
+
+# --- helpers for JWmapping ---
+@inline ubit(i::Int) = UInt128(1) << (i-1)                         # bit at site i (1-based)
+@inline umask_lt(i::Int) = i==1 ? UInt128(0) : (ubit(i) - UInt128(1))  # bits < i
+@inline umask_le(i::Int) = umask_lt(i) | ubit(i)                      # bits ≤ i
+
+# --- JW mapping (original real ± form; your coeff() supplies +i on ZX sites) ---
 function JWmapping(o::Pauli{N}; i::Int, j::Int) where N
-    # Compute C^dagger_i term
-    ax_term = Pauli(2^(i-1)-1, 2^(i-1), N)
-    ay_term = Pauli(2^(i)-1, 2^(i-1), N)
-    c_dagg_a = 0.5 * (ax_term - ay_term)
+    1 <= i <= N || throw(DimensionMismatch("site i=$i out of 1:$N"))
+    1 <= j <= N || throw(DimensionMismatch("site j=$j out of 1:$N"))
 
-    # Compute C_j term
-    bx_term = Pauli(2^(j-1)-1, 2^(j-1), N)
-    by_term = Pauli(2^(j)-1, 2^(j-1), N)
-    c_b = 0.5 * (bx_term + by_term)
+    # X pieces with Z-strings
+    ax = Pauli{N}(1, reinterpret(Int128, umask_lt(i)), reinterpret(Int128, ubit(i)))  # Z^{<i} X_i
+    bx = Pauli{N}(1, reinterpret(Int128, umask_lt(j)), reinterpret(Int128, ubit(j)))  # Z^{<j} X_j
 
-    # Build C^dagger_i*C_j
-    term =  c_dagg_a*c_b
+    # "Y" pieces = Z^{≤i} X_i, Z^{≤j} X_j  (no explicit im; your coeff() turns ZX into iY)
+    ay = Pauli{N}(1, reinterpret(Int128, umask_le(i)), reinterpret(Int128, ubit(i)))
+    by = Pauli{N}(1, reinterpret(Int128, umask_le(j)), reinterpret(Int128, ubit(j)))
 
-    return term
+    # c†_i = (X_i - Y_i)/2,  c_j = (X_j + Y_j)/2   in your convention
+    c_dagg_i = 0.5 * (ax - ay)
+    c_j      = 0.5 * (bx + by)
+
+    return c_dagg_i * c_j
+end
+
+"""
+    combine_clip!(generators::Vector{Pauli{N}}, parameters::Vector{Float64};
+                  atol=1e-12) where N
+
+Absorb Pauli phases, combine identical strings, drop small terms (<atol),
+and enforce real coefficients.
+"""
+function combine_clip!(generators::Vector{Pauli{N}},
+                       parameters::Vector{Float64};
+                       atol::Real=1e-12) where N
+    @assert length(generators) == length(parameters)
+
+    # accumulate by (z,x), absorbing phase via coeff(p)
+    acc = Dict{Tuple{Int128,Int128}, ComplexF64}()
+    for (p, a) in zip(generators, parameters)
+        acc[(p.z, p.x)] = get(acc, (p.z, p.x), 0 + 0im) + a * coeff(p)
+    end
+
+    empty!(generators); empty!(parameters)
+
+    for ((z,x), c) in acc
+        # drop tiny
+        if isapprox(c, 0; atol=atol); continue; end
+
+        # enforce real
+        if !isapprox(imag(c), 0; atol=atol)
+            error("Non-real coefficient $c for Pauli(z=$z,x=$x). Check JWmapping/Hermitian pairing.")
+        end
+
+        # push canonical Pauli with unit scalar; keep only the real part
+        push!(generators, Pauli{N}(1, z, x))
+        push!(parameters, real(c))
+    end
+    return generators, parameters
 end
 
 """
@@ -337,6 +398,7 @@ function hubbard_model_1D(o::Pauli{N}; L::Int64, t::Float64, U::Float64, k::Int6
             a_up = 2*i - 1   # spin-up orbital index
             a_dn = 2*i       # spin-down orbital index
             interaction_term = JWmapping(o, i=a_up, j=a_up) * JWmapping(o, i=a_dn, j=a_dn)
+
             for (pauli, coeff) in interaction_term
                 if coeff == 0.0
                     continue
@@ -346,6 +408,8 @@ function hubbard_model_1D(o::Pauli{N}; L::Int64, t::Float64, U::Float64, k::Int6
             end
         end
     end
+
+    combine_clip!(generators, parameters)  # clean model
 
     return generators, parameters   
     
@@ -462,6 +526,8 @@ function hubbard_model_2D_block(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64, U::Fl
         end
     end
 
+    combine_clip!(generators, parameters)  # clean model
+
     return generators, parameters
 end
 
@@ -577,6 +643,8 @@ function fermi_hubbard_2D_pauli(o::Pauli{N}; Lx::Int, Ly::Int, t::Float64=1.0, U
         end
     end
 
+    combine_clip!(generators, parameters)  # clean model
+
     return generators, parameters
 end
 
@@ -684,6 +752,8 @@ function hubbard_model_2D_interleaved(o::Pauli{N}; Lx::Int64, Ly::Int64, t::Floa
             end
         end
     end
+
+    combine_clip!(generators, parameters)  # clean model
 
     return generators, parameters
 end
