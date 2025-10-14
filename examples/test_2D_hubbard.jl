@@ -346,31 +346,35 @@ function properties_table(; Lx = 2, Ly = 2, t = 1.0, U = 2.0, k = 1, max_weights
     save_results(filename_pauli, results_pauli)
 end
 
-Us = [2.0]#, 4.0, 6.0, 8.0, 10.0, 12.0]
-ks = [1,2,5,10]
-for u in Us
-    for k in ks
-    println("Calculation for k = ", k, "  U = ", u)
-    plot_abs_error_vs_weight_pdf(Lx=2, Ly=2, t=1.0, U=u, k=k, max_weights=1:1:16)
-    #properties_table(Lx=2, Ly=2, t=1.0, U=u, k=k, max_weights=1:1:8)
+#Us = [2.0]#, 4.0, 6.0, 8.0, 10.0, 12.0]
+#ks = [1,2,5,10]
+#for u in Us
+#    for k in ks
+#    println("Calculation for k = ", k, "  U = ", u)
+#    plot_abs_error_vs_weight_pdf(Lx=2, Ly=2, t=1.0, U=u, k=k, max_weights=1:1:16)
+#    #properties_table(Lx=2, Ly=2, t=1.0, U=u, k=k, max_weights=1:1:8)
+#    end
+#end
+
+
+function test_hubbard_2D()
+    Lx = 1
+    Ly = 64
+    t = 1.0
+    U = 2.0
+    k = 1
+    N = 2 * Lx * Ly  # Total qubits for spinful model
+
+    o = Pauli(N)
+    generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o; Lx=Lx, Ly=Ly, t=t, U=U, k=k)
+
+    println("2D Hubbard model generators and parameters:")
+    for (gen, param) in zip(generators, parameters)
+        #println("Generator: ", gen, ", Parameter: ", param)
+        display(gen)
     end
+    println("Total generators: ", length(generators))
+
 end
 
-
-## Testing stuff
-## Compute C^dagger_i term
-#N = 32
-#a = 8
-#b = 1
-#ax_term = Pauli(2^(a-1)-1, 2^(a-1), N)
-#ay_term = Pauli(2^(a)-1, 2^(a-1), N)
-#c_dagg_a = 0.5 * (ax_term - ay_term)
-## Compute C_j term
-#bx_term = Pauli(2^(b-1)-1, 2^(b-1), N)
-#by_term = Pauli(2^(b)-1, 2^(b-1), N)
-#c_b = 0.5 * (bx_term + by_term)
-## Build C^dagger_i*C_j
-#term =  c_dagg_a*c_b 
-#result = term + adjoint(term)
-#println("Build C^dagger_i*C_j:")
-#println(string(result))
+#test_hubbard_2D()

@@ -158,7 +158,7 @@ function run(; N=6, threshold=1e-3, dt=0.1, T=10.0, scheme=:mag,
 
     # main OTOC plot
     plt1 = plot(tgrid, F, lw=2, label="$(scheme), th=$(threshold), w=$(wmax === nothing ? "All" : string(wmax))")
-    xlabel!(plt1, "Time"); ylabel!(plt1, "F(t)")
+    xlabel!(plt1, "Time"); ylabel!(plt1, "OTOC(t)")
     title!(plt1, "N=$N; Jx=$x Jy=$y Jz=$z; dt=$dt")
 
     # complexity & loss
@@ -175,11 +175,15 @@ function run(; N=6, threshold=1e-3, dt=0.1, T=10.0, scheme=:mag,
     return (t=tgrid, F=F, n=nterms, loss=loss, dict=dict)
 end
 
+#
+# - - - Threshold Based Pruning Comparisons - - - 
+#
 thresholds = [1e-1, 1e-2, 1e-3]
 curves = []
-NQubits = 6
+NQubits = 8
+total_time = 40.0
 for th in thresholds
-    push!(curves, run(N=NQubits, threshold=th, dt=0.1, T=10.0, scheme=:mag, saveprefix="mag_prune"))
+    push!(curves, run(N=NQubits, threshold=th, dt=0.1, T=total_time, scheme=:mag, saveprefix="mag_prune"))
 end
 
 # overlay F(t) curves in one figure
@@ -187,17 +191,54 @@ plt = plot()
 for (i,th) in enumerate(thresholds)
     plot!(plt, curves[i].t, curves[i].F, lw=2, label="th=$(th)")
 end
-xlabel!("Time"); ylabel!("F(t)")
-title!("Magnitude pruning — threshold sweep")
-savefig(plt, "compare_F_mag_post.pdf")
+xlabel!("Time"); ylabel!("OTOC(t)"); title!("Coeff Magnitude pruning comparison.")
+savefig(plt, "N=$(NQubits)_compare_otoc_coeff_thresh_pruning.pdf")
+
+#
+# - - - Weight Based Pruning Comparisons - - - 
+#
+
+res_w2 = run(N=NQubits, threshold=0.0, dt=0.1, T=total_time, scheme=:weight,  wmax=2, saveprefix="wcap2")
+res_w4 = run(N=NQubits, threshold=0.0, dt=0.1, T=total_time, scheme=:weight,  wmax=4, saveprefix="wcap4")
+res_w6 = run(N=NQubits, threshold=0.0, dt=0.1, T=total_time, scheme=:weight,  wmax=6, saveprefix="wcap6")
+#res_w8 = run(N=NQubits, threshold=0.0, dt=0.1, T=total_time, scheme=:weight,  wmax=8, saveprefix="wcap8")
+#res_w10 = run(N=NQubits, threshold=0.0, dt=0.1, T=total_time, scheme=:weight,  wmax=10, saveprefix="wcap10")
 
 
-res_w3 = run(N=NQubits, threshold=0.0, dt=0.1, T=10.0, scheme=:weight,  wmax=3, saveprefix="wcap3")
-res_w4 = run(N=NQubits, threshold=0.0, dt=0.1, T=10.0, scheme=:weight,  wmax=4, saveprefix="wcap4")
-res_c  = run(N=NQubits, threshold=1e-3, dt=0.1, T=10.0, scheme=:combined, wmax=4, saveprefix="combined")
-
-plt_w = plot(res_w3.t, res_w3.F, lw=2, label="wmax=3")
+plt_w = plot(res_w2.t, res_w2.F, lw=2, label="wmax=2")
 plot!(plt_w, res_w4.t, res_w4.F, lw=2, label="wmax=4")
-plot!(plt_w, res_c.t,  res_c.F,  lw=2, label="combined th=1e-3, w=4")
-xlabel!("Time"); ylabel!("F(t)"); title!("Weight capping vs combined")
-savefig(plt_w, "compare_F_weight_vs_combined.pdf")
+plot!(plt_w, res_w6.t, res_w6.F, lw=2, label="wmax=6")
+#plot!(plt_w, res_w8.t, res_w8.F, lw=2, label="wmax=8")
+#plot!(plt_w, res_w10.t, res_w10.F, lw=2, label="wmax=10")
+xlabel!("Time"); ylabel!("OTOC(t)"); title!("Weight Pruning comparison.")
+savefig(plt_w, "N=$(NQubits)_compare_otoc_weight_pruning.pdf")
+
+#
+# - - - Threshold+Weight Based Pruning Comparisons - - - 
+#
+
+res_c_1_2  = run(N=NQubits, threshold=1e-1, dt=0.1, T=total_time, scheme=:combined, wmax=2, saveprefix="combined")
+res_c_2_2  = run(N=NQubits, threshold=1e-2, dt=0.1, T=total_time, scheme=:combined, wmax=2, saveprefix="combined")
+res_c_3_2  = run(N=NQubits, threshold=1e-3, dt=0.1, T=total_time, scheme=:combined, wmax=2, saveprefix="combined")
+
+res_c_1_4  = run(N=NQubits, threshold=1e-1, dt=0.1, T=total_time, scheme=:combined, wmax=4, saveprefix="combined")
+res_c_2_4  = run(N=NQubits, threshold=1e-2, dt=0.1, T=total_time, scheme=:combined, wmax=4, saveprefix="combined")
+res_c_3_4  = run(N=NQubits, threshold=1e-3, dt=0.1, T=total_time, scheme=:combined, wmax=4, saveprefix="combined")
+
+res_c_1_6  = run(N=NQubits, threshold=1e-1, dt=0.1, T=total_time, scheme=:combined, wmax=6, saveprefix="combined")
+res_c_2_6  = run(N=NQubits, threshold=1e-2, dt=0.1, T=total_time, scheme=:combined, wmax=6, saveprefix="combined")
+res_c_3_6  = run(N=NQubits, threshold=1e-3, dt=0.1, T=total_time, scheme=:combined, wmax=6, saveprefix="combined")
+
+
+plt_c = plot(res_c_1_2.t,  res_c_1_2.F,  lw=2, label="combined th=1e-1, w=2",ls=:solid, linecolor=:black)
+plot!(plt_c, res_c_2_2.t,  res_c_2_2.F,  lw=2, label="combined th=1e-2, w=2")
+plot!(plt_c, res_c_3_2.t,  res_c_3_2.F,  lw=2, label="combined th=1e-3, w=2")
+plot!(plt_c, res_c_1_4.t,  res_c_1_4.F,  lw=2, label="combined th=1e-1, w=4")
+plot!(plt_c, res_c_2_4.t,  res_c_2_4.F,  lw=2, label="combined th=1e-2, w=4")
+plot!(plt_c, res_c_3_4.t,  res_c_3_4.F,  lw=2, label="combined th=1e-3, w=4")
+plot!(plt_c, res_c_1_6.t,  res_c_1_6.F,  lw=2, label="combined th=1e-1, w=6")
+plot!(plt_c, res_c_2_6.t,  res_c_2_6.F,  lw=2, label="combined th=1e-2, w=6")
+plot!(plt_c, res_c_3_6.t,  res_c_3_6.F,  lw=2, label="combined th=1e-3, w=6")   
+
+xlabel!("Time"); ylabel!("OTOC(t)"); title!("Combined pruning comparison.")
+savefig(plt_c, "N=$(NQubits)_compare_otoc_combined_pruning.pdf")

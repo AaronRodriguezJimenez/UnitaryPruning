@@ -170,7 +170,7 @@ end
 # Test 1D Hubbard model
 #
 function test_hubbard_1D()
-    L = 3
+    L = 20
     t = 1.0
     U = 2.0
     k = 1
@@ -190,25 +190,3 @@ function test_hubbard_1D()
 end
 
 test_hubbard_1D()
-
-function test_hubbard_2D()
-    Lx = 1
-    Ly = 10
-    t = 1.0
-    U = 2.0
-    k = 1
-    N = 2 * Lx * Ly  # Total qubits for spinful model
-
-    o = Pauli(N)
-    generators, parameters = UnitaryPruning.hubbard_model_2D_interleaved(o; Lx=Lx, Ly=Ly, t=t, U=U, k=k)
-
-    println("2D Hubbard model generators and parameters:")
-    for (gen, param) in zip(generators, parameters)
-        #println("Generator: ", gen, ", Parameter: ", param)
-        display(gen)
-    end
-    println("Total generators: ", length(generators))
-
-end
-
-#test_hubbard_2D()
