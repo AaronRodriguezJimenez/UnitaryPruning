@@ -13,7 +13,7 @@ end
 
 function run(; N=6, k=10, thresh=1e-3)
    
-    ket = KetBitString(N, 0) 
+    ket = Ket{N}(0) 
     o = Pauli(N, Z=[1])
 
     angles = [] 
