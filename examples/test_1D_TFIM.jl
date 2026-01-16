@@ -139,4 +139,4 @@ function plot_abs_error_vs_weight_pdf_1D_compare(; N=3, k=10, max_weights=0:2:6)
 end
 
 # Example run
-plot_abs_error_vs_weight_pdf_1D_compare(N=10, k=10, max_weights=0:2:20)
+plot_abs_error_vs_weight_pdf_1D_compare(N=4, k=10, max_weights=0:4:2)
