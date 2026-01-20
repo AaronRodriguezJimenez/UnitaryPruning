@@ -184,7 +184,8 @@ trott_steps = 4
 # Define initial ket and Initial operator to be evolved under the circuit
 #ket = Ket(N,0)
 ket = Ket{N}(12)
-o = Pauli(N, X=[1])
+#o = Pauli(N, X=[1])
+o = Pauli(N, X=[3,4])
 
 # Call evolution_op. And get the evolved O(t) operator
 threshold = 1e-4 #pruning threshold based on coeff.
@@ -212,18 +213,31 @@ for (i,interval) in enumerate(tgrid)
     @printf("%.2s    %.4f    %.6f   %.6f   %.6f  %.6f\n", i, interval, rRES[i], iRES[i], normop2, normop)
 end
 
-
+println("Initial operator O:")
+display(o)
 println("Initial eigenstate |0> ")
 display(ket)
 display(Vector(ket))
 println("- - - H|0> - - - -")
 Hpsi0 = Hmat*Vector(ket) 
 display(Hpsi0) 
+println("- - - <0|H|0> - - - -")
+function compute_ref_expval(H, k)
+    ref_expval = 0
+    for (p, c) in H
+        ref_expval += c * expectation_value(p, ket)
+    end
+    return ref_expval
+end
+
+ref_expval = compute_ref_expval(H, k)
+println(ref_expval)
+
 
 
 # SIGNAL PROCESSING multiply by exp(-iE_0t) to correct signal
 signal = rRES .+ 1im * iRES;
-phase = exp.(1im .* tgrid); #-1 is the eigenvalue associated with the eigenvector (|0>)
+phase = exp.(-1im .* tgrid); #-1 is the eigenvalue associated with the eigenvector (|0>)
 
 #corrected signal F(t) = exp(-iE_0t)*C(t)
 F = phase .* signal

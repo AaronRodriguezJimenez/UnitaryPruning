@@ -59,9 +59,10 @@ for (idx, eig) in enumerate(eigvals(Hmat)[1:5])
 end
 
 # Define initial ket and Initial operator to be evolved under the circuit
-ket = Ket{N}(0)
+#ket = Ket{N}(0)
 ket = Ket{N}(12)
-o = Pauli(N, X=[1])
+#o = Pauli(N, X=[1])
+o = Pauli(N, X=[3,4])
 Omat = Matrix(o)
 V0 = Vector(ket)
 
@@ -112,9 +113,9 @@ println("- - - C(t) - - - ")
 rRES = real(Ct)
 iRES = imag(Ct)
 plt = plot(tgrid, rRES, lw=2, seriestype=:scatter,
-          label="Re(C(t), th=$threshold")
+          label="Re(C(t)")
 plt = plot!(tgrid, iRES, lw=2, seriestype=:scatter,
-          label="Im(C(t), th=$threshold")
+          label="Im(C(t)")
 
 xlabel!(plt, "Time"); ylabel!(plt, "< X_1(0)X_1(t) >")
 title!(plt, "N=$N, J=$J, g=$g,dt=$dt")
@@ -145,16 +146,16 @@ println("V0' * W * V0: ", V0' * W * V0)
 
 # SIGNAL PROCESSING multiply by exp(-iE_0t) to correct signal
 signal = rRES .+ 1im * iRES;
-phase = exp.(1im .* tgrid); #-1 is the eigenvalue associated with the eigenvector
+phase = exp.(-1im .* tgrid); #-1 is the eigenvalue associated with the eigenvector
 
 #corrected signal F(t) = exp(-iE_0t)*C(t)
 F = phase .* signal
 
 # Print C(t) results
 plt2 = plot(tgrid, real(F), lw=2, seriestype=:scatter,
-          label="Re(F(t), th=$threshold")
+          label="Re(F(t)")
 plt2 = plot!(tgrid, imag(F), lw=2, seriestype=:scatter,
-          label="Im(F(t), th=$threshold")
+          label="Im(F(t)")
 
 xlabel!(plt2, "Time"); ylabel!(plt2, "exp(-iE_0t) * < X_1(0)X_1(t) >")
 title!(plt2, "N=$N, J=$J, g=$g,dt=$dt")
@@ -169,13 +170,13 @@ for (i,interval) in enumerate(tgrid)
 end
 
 plt3 = plot(tgrid, rRES, lw=2, seriestype=:scatter,
-          label="Re(C(t), th=$threshold")
+          label="Re(C(t)")
 plt3 = plot!(tgrid, iRES, lw=2, seriestype=:scatter,
-          label="Im(C(t), th=$threshold")
+          label="Im(C(t)")
 plt3 = plot!(tgrid, real(F), lw=2, seriestype=:scatter,
-          label="Re(F(t), th=$threshold")
+          label="Re(F(t)")
 plt3 = plot!(tgrid, imag(F), lw=2, seriestype=:scatter,
-          label="Im(F(t), th=$threshold")
+          label="Im(F(t)")
 
 xlabel!(plt3, "Time"); ylabel!(plt3, "exp(-iE_0t) * < X_1(0)X_1(t) >")
 title!(plt3, "Signal Comparison N=$N, J=$J, g=$g,dt=$dt")
