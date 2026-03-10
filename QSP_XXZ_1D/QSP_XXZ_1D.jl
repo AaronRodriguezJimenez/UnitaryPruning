@@ -175,7 +175,7 @@ function evolution_op(Jx, Jy, Jz, gx, gy, gz, n_intervals, dt,
     generators, angles = trott_unitary_sequence_Heisenberg(o, Jx=Jx, Jy=Jy, Jz=Jz,
                                      gx=gx, gy=gy, gz=gz, k=1)
     nt = length(angles)                            
-    
+    println("Total Rotations:", nt * n_intervals)
     # Evolve W under Trotterization
     for ki in 1:n_intervals
             # Trotter terms U_1 U_2, ..., U_k
@@ -218,7 +218,7 @@ gx = 0.0
 gy = 0.0
 gz = 0.0
 g = 0.00#-0.01
-N = 6 #Total number of qubits
+N = 4 #Total number of qubits
 H = heisenberg_1D(N, Jx, Jy, Jz)
 @printf("1D-Heisenberg Hamiltonian (J= %.2f, Jz= %.2f): \n", Jx, Jz)
 display(H)
@@ -245,8 +245,14 @@ o = PauliSum(o)
 
 # Call evolution_op. And get the evolved O(t) operator
 threshold = 1e-4 #pruning threshold based on coeff.
+t1 = time()
+
 rRES, iRES, tgrid = evolution_op(Jx, Jy, Jz, gx, gy, gz, k, dt, 
                                   o, ket; thresh=threshold)
+
+                                  # Code block to measure
+elapsed_time = time() - t1
+println("Elapsed time: ", elapsed_time, " seconds")
 
 # Number of snapshots actually returned
 nsnap = length(rRES)
@@ -260,7 +266,7 @@ plt = plot!(tgrid, iRES, lw=2, seriestype=:scatter,
 
 xlabel!(plt, "Time"); ylabel!(plt, "< O(0)O(t) >")
 title!(plt, "N=$N, J=$Jx, Jz=$Jz,dt=$dt")
-savefig(plt, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/QSP_XXZ.pdf")
+savefig(plt, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/20Q_QSP_XXZ.pdf")
 
 println("- - - Sanity Check: |C(t)|^2 - - - ")
 @printf("idx    dt     Re(C(t))    Im(C(t))   |C(t)|^2   |C(t)|\n")
@@ -306,14 +312,21 @@ plt2 = plot!(tgrid, imag(F), lw=2, seriestype=:scatter,
 
 xlabel!(plt2, "Time"); ylabel!(plt2, "exp(-iE_t) * < O(0)O(t) >")
 title!(plt2, "N=$N, J=$Jx, Jz=$Jz,dt=$dt")
-savefig(plt2, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/QSP_XXZ_corrct.pdf")
+savefig(plt2, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/$N-Q_QSP_XXZ_corrct.pdf")
 
-println("- - - Compare signals  - - - ")
-@printf("dt   Re(C(t))    Im(C(t))   Re(F(t))    Im(F(t))\n")
-for (i,interval) in enumerate(tgrid)
-    normop2 = rRES[i]^2 + iRES[i]^2
-    normop = sqrt(normop2)
-    @printf("%.4f     %.6f    %.6f    %.6f   %.6f\n", interval, rRES[i], iRES[i], real(F[i]), imag(F[i]))
+using Printf
+
+open("/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/$N-Q_signals.txt", "w") do io
+    println(io, "- - - XXZ $N qubits output signals  - - - ")
+    @printf(io, "dt   Re(C(t))    Im(C(t))   Re(F(t))    Im(F(t))\n")
+
+    for (i, interval) in enumerate(tgrid)
+        normop2 = rRES[i]^2 + iRES[i]^2
+        normop = sqrt(normop2)
+
+        @printf(io, "%.4f     %.6f    %.6f    %.6f   %.6f\n",
+                interval, rRES[i], iRES[i], real(F[i]), imag(F[i]))
+    end
 end
 
 plt3 = plot(tgrid, rRES, lw=2, seriestype=:scatter,
@@ -327,4 +340,4 @@ plt3 = plot!(tgrid, imag(F), lw=2, seriestype=:scatter,
 
 xlabel!(plt3, "Time"); ylabel!(plt3, "exp(-iE_kt) * < O(0)O(t) >")
 title!(plt3, "Signal Comparison N=$N, J=$Jx, Jz=$Jz,dt=$dt")
-savefig(plt3, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/QSP_XXZ_comparison.pdf")
+savefig(plt3, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/20Q_QSP_XXZ_comparison.pdf")

@@ -278,8 +278,11 @@ o = PauliSum(o)
 #lamb = res.λ
 #tgrid = collect(range(0.0, stop=n_intervals * dt/lamb, length=n_meas))
 #tgrid = res.time_grid
-
+t1 = time()
 rRES, iRES, time_grid = averaged_qdrift(reps, ket, o, H, thresh, n_meas, t, eps)
+
+elapsed_time = time() - t1
+println("Elapsed time: ", elapsed_time, " seconds")
 
 println("TIME GRID : ", tgrid)
 # Number of snapshots actually returned
@@ -287,7 +290,6 @@ nsnap = length(rRES)
 println("* * * * Number of snapshots collected: $nsnap")
 
 # Print C(t) results
-
 plt = plot(tgrid, rRES, lw=2, seriestype=:scatter,
            label="Re(C(t), th=$thresh")
 plt = plot!(tgrid, iRES, lw=2, seriestype=:scatter,
@@ -309,4 +311,4 @@ plot!(t_exact, ImC_exact, label="Im C exact", lw=2)
 xlabel!(plt, "Time"); ylabel!(plt, "< O(0)O(t) >")
 title!(plt, "N=$Nqubits, J=$Jx, Jz=$Jz")
 
-savefig(plt, "qdrift_QSP_XXZ_1D_eps=$eps.pdf") 
+savefig(plt, "qdrift_QSP_XXZ_4Q_1D_eps=$eps.pdf") 

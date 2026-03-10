@@ -1,3 +1,6 @@
+#
+# qDRIFT Testing at Spin 1D XXZ
+#
 using LinearAlgebra
 using UnitaryPruning
 using PauliOperators
@@ -7,6 +10,9 @@ using Printf
 using Random
 using StatsBase
 
+#
+# - - - Clipping functions - - -
+#
 function coeff_clip!(ps::KetSum{N}; thresh=1e-16) where {N}
     return filter!(p->abs(p.second) > thresh, ps)
 end
@@ -17,6 +23,25 @@ end
 
 function coeff_clip(ps::PauliSum{N}; thresh=1e-16) where {N}
     return filter(p->abs(p.second) > thresh, ps)
+end
+
+#
+#- - - Hamiltonian - - -
+#
+function heisenberg_1D(N, Jx, Jy, Jz; x=0, y=0, z=0)
+    H = PauliSum(N, Float64)
+    for i in 0:N-1
+        H += -Jx * Pauli(N, X=[i+1,(i+1)%(N)+1])
+        H += -Jy * Pauli(N, Y=[i+1,(i+1)%(N)+1])
+        H += -Jz * Pauli(N, Z=[i+1,(i+1)%(N)+1])
+    end 
+    for i in 1:N
+        H += x * Pauli(N, X=[i])
+        H += y * Pauli(N, Y=[i])
+        H += z * Pauli(N, Z=[i])
+    end 
+    coeff_clip!(H)
+    return H
 end
 
 # return a PauliOperators Ket equivalent to a given bitstring
@@ -38,7 +63,7 @@ function string_to_ket(bits::String)
 end
 
 """
- Evolve function from DBF code
+ Evolve function 
 """
 function evolve!(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
     _cos = cos(θ)
@@ -58,24 +83,6 @@ function evolve!(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
     return O 
 end
 
-#
-#- - - Hamiltonian - - -
-#
-function heisenberg_1D(N, Jx, Jy, Jz; x=0, y=0, z=0)
-    H = PauliSum(N, Float64)
-    for i in 0:N-1
-        H += -Jx * Pauli(N, X=[i+1,(i+1)%(N)+1])
-        H += -Jy * Pauli(N, Y=[i+1,(i+1)%(N)+1])
-        H += -Jz * Pauli(N, Z=[i+1,(i+1)%(N)+1])
-    end 
-    for i in 1:N
-        H += x * Pauli(N, X=[i])
-        H += y * Pauli(N, Y=[i])
-        H += z * Pauli(N, Z=[i])
-    end 
-    coeff_clip!(H)
-    return H
-end
 
 # Helper: extract PauliBasis operators and coefficients from PauliSum
 function extract_hamiltonian_coeffs_and_ops(H::PauliSum{N,T}) where {N,T}
@@ -149,7 +156,7 @@ function qdrift_propagator(ket, o::PauliSum{N,T}, H::PauliSum{N,T},
     rCtvals = Float64[]
     iCtvals = Float64[]
 
-    # Measurement scheduling (unchanged)
+    # Measurement scheduling
     N_tau = length(sample_list)
     N_meas = min(tot_measurements, N_tau)
     meas_lst = unique(round.(Int, LinRange(1, N_tau, N_meas)))
@@ -159,7 +166,7 @@ function qdrift_propagator(ket, o::PauliSum{N,T}, H::PauliSum{N,T},
 
     time_grid = collect(range(0.0, stop=t, length=N_meas))
 
-    # Iterate qDRIFT steps (same as your code)
+    # Iterate qDRIFT steps
     meas_idx = 1
     next_meas = meas_lst[meas_idx]
     sample_idx = 1
@@ -171,7 +178,7 @@ function qdrift_propagator(ket, o::PauliSum{N,T}, H::PauliSum{N,T},
         evolve!(Wt, pb, theta)
         coeff_clip!(Wt, thresh=thresh)
         WWt = W * Wt
-
+        
         if sample_idx == next_meas
             expval = expectation_value(WWt, ket)
             push!(rCtvals, real(expval))
@@ -203,11 +210,13 @@ function qdrift_propagator(ket, o::PauliSum{N,T}, H::PauliSum{N,T},
     # Return the seed if it is a MersenneTwister, otherwise return nothing.
     used_seed = isa(rng, MersenneTwister) ? copy(rng.seed) : nothing
 
-    return (sample=sample_list, probs=probs, time_grid=time_grid,
+    return (sample=sample_list, probs=probs, time_grid=time_grid, nsamples=N_tau,
             λ=λ, τ=τ, N=Nsamples, RCt=rCtvals, ICt=iCtvals, seed=used_seed)
 end
 
-# averaged_qdrift: create a fresh RNG per run (random, independent selections each call)
+"""
+ averaged_qdrift: create a fresh RNG per run (random, independent selections each call)
+"""
 function averaged_qdrift(n_runs, ket, o::PauliSum{N,T}, H::PauliSum{N,T},
                          thresh::Real, tot_measurements::Int,
                          t::Real, eps::Real) where {N,T}
@@ -216,72 +225,74 @@ function averaged_qdrift(n_runs, ket, o::PauliSum{N,T}, H::PauliSum{N,T},
     t_grid = zeros(tot_measurements)
 
     seeds = Vector{Union{Int,Nothing}}(undef, n_runs)  # to store seeds used per run (for reproducibility)
-
+    
     for r in 1:n_runs
         # Get a fresh, unpredictable 32-bit seed from OS entropy
         s = rand(RandomDevice(), UInt32)      # RandomDevice() uses OS entropy
         seed = Int(s)
         rng = MersenneTwister(seed)          # rng for this run
-
+        t1 = time()
         res = qdrift_propagator(ket, o, H, thresh, tot_measurements, t, eps;
                                 rng=rng, plot=false, print_selection=false)
+        
+        elapsed_time = time() - t1
+        #println("Elapsed time: ", elapsed_time, " seconds")
+        
         sum_RCt .+= res.RCt
         sum_ICt .+= res.ICt
         t_grid = res.time_grid
-        seeds[r] = seed
-    end
+        seeds[r] = seed   
+        @printf("Seed: %d  Run: %d  Samples:  %d   Time:  %12.8f ", seed, r,  res.nsamples, elapsed_time)
 
-    # Return average and the seeds used (so specific runs can be reproduced later)
-    return sum_RCt ./ n_runs, sum_ICt ./ n_runs, t_grid, seeds
+        rRES = sum_RCt ./ n_runs
+        iRES = sum_ICt ./ n_runs
+
+        open("/Users/admin/VSCProjects/UnitaryPruning/qDRIFT/$N-Q_signals_rep_$r.txt", "w") do io
+            println(io, "- - - XXZ $N qubits output qDRIFT signals, epsilon= $eps  - - - ")
+            @printf(io, "Seed: %d  Run: %d  Samples:  %d   Time:  %12.8f\n", seed, r,  res.nsamples, elapsed_time)
+            @printf(io, "dt   Re(C(t))    Im(C(t))\n")
+            for (i, interval) in enumerate(t_grid)
+                @printf(io, "%.4f     %.6f    %.6f\n", interval, rRES[i], iRES[i])
+            end        
+        end
+    end 
+
+    return 
 end
 
 # demo parameters
 Jx, Jy, Jz = 1.0, 1.0, 2.0
-Nqubits = 10
+Nqubits = 4
 ket = Ket(Nqubits, 1)
 #ket, _ = string_to_ket("1000")
 #ket, _ = string_to_ket("10000000000000000000")
 H = heisenberg_1D(Nqubits, Jx, Jy, Jz)
 t = 2.5
 eps = 2.5
-reps = 1 
+reps = 25 
 thresh = 1e-4 # Evolution threshold for evolve
 n_meas = 100 #Number of measurements
 
 o = Pauli(Nqubits, X=[1])
 o = PauliSum(o)
-t1 = time()
-rRES, iRES, time_grid = averaged_qdrift(reps, ket, o, H, thresh, n_meas, t, eps)
 
-elapsed_time = time() - t1
-println("Elapsed time: ", elapsed_time, " seconds")
-
-println("TIME GRID : ", time_grid)
-# Number of snapshots actually returned
-nsnap = length(rRES)
-println("* * * * Number of snapshots collected: $nsnap")
-
-# Print C(t) results
-
-plt = plot(time_grid, rRES, lw=2, seriestype=:scatter,
-           label="Re(C(t), th=$thresh")
-plt = plot!(time_grid, iRES, lw=2, seriestype=:scatter,
-           label="Im(C(t), th=$thresh")
+averaged_qdrift(reps, ket, o, H, thresh, n_meas, t, eps)
 
 # Read file exact result for comparison
-lines = readlines("/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/exact_10Q_XXZ.txt")
-lines = lines[2:end]
+#lines = readlines("/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/exact_10Q_XXZ.txt")
+#lines = lines[2:end]
+#parsed = [parse.(Float64, split(line)) for line in lines]
+#t_exact   = getindex.(parsed, 1)
+#ReC_exact = getindex.(parsed, 2)
+#ImC_exact = getindex.(parsed, 3)
 
-parsed = [parse.(Float64, split(line)) for line in lines]
-
-t_exact   = getindex.(parsed, 1)
-ReC_exact = getindex.(parsed, 2)
-ImC_exact = getindex.(parsed, 3)
-# Plot exact curve
-plot!(t_exact, ReC_exact, label="Re C exact", lw=2)
-plot!(t_exact, ImC_exact, label="Im C exact", lw=2)
-
-xlabel!(plt, "Time"); ylabel!(plt, "< O(0)O(t) >")
-title!(plt, "N=$Nqubits, J=$Jx, Jz=$Jz")
-
-savefig(plt, "qdrift_QSP_XXZ_10Q_1D_eps=$eps.pdf") 
+# Plot C(t) results
+#plt = plot(time_grid, rRES, lw=2, seriestype=:scatter,
+#           label="Re(C(t), th=$thresh")
+#plt = plot!(time_grid, iRES, lw=2, seriestype=:scatter,
+#           label="Im(C(t), th=$thresh")
+#plot!(t_exact, ReC_exact, label="Re C exact", lw=2)
+#plot!(t_exact, ImC_exact, label="Im C exact", lw=2)
+#xlabel!(plt, "Time"); ylabel!(plt, "< O(0)O(t) >")
+#title!(plt, "N=$Nqubits, J=$Jx, Jz=$Jz")
+#savefig(plt, "/Users/admin/VSCProjects/UnitaryPruning/qDRIFT/1D_XXZ_Q=$Nqubits-eps=$eps.pdf") 
