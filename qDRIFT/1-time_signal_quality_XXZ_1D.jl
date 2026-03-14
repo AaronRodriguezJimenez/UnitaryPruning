@@ -1,4 +1,4 @@
-#
+# This code produces the signals for XXZ model computed for various repetitions of qDRIFT
 # qDRIFT Testing at Spin 1D XXZ
 #
 using LinearAlgebra
@@ -161,8 +161,8 @@ function qdrift_propagator(ket, o::PauliSum{N,T}, H::PauliSum{N,T},
     N_meas = min(tot_measurements, N_tau)
     meas_lst = unique(round.(Int, LinRange(1, N_tau, N_meas)))
     sort!(meas_lst)
-    @printf("Will take %d measurements at indices (first 20): %s\n",
-            length(meas_lst), string(meas_lst[1:min(end,20)]))
+    #@printf("Will take %d measurements at indices (first 20): %s\n",
+    #        length(meas_lst), string(meas_lst[1:min(end,20)]))
 
     time_grid = collect(range(0.0, stop=t, length=N_meas))
 
@@ -225,7 +225,8 @@ function averaged_qdrift(n_runs, ket, o::PauliSum{N,T}, H::PauliSum{N,T},
     t_grid = zeros(tot_measurements)
 
     seeds = Vector{Union{Int,Nothing}}(undef, n_runs)  # to store seeds used per run (for reproducibility)
-    
+    elapsed_times = Vector()
+
     for r in 1:n_runs
         # Get a fresh, unpredictable 32-bit seed from OS entropy
         s = rand(RandomDevice(), UInt32)      # RandomDevice() uses OS entropy
@@ -237,6 +238,7 @@ function averaged_qdrift(n_runs, ket, o::PauliSum{N,T}, H::PauliSum{N,T},
         
         elapsed_time = time() - t1
         #println("Elapsed time: ", elapsed_time, " seconds")
+        push!(elapsed_times, elapsed_time)
         
         sum_RCt .+= res.RCt
         sum_ICt .+= res.ICt
@@ -244,8 +246,8 @@ function averaged_qdrift(n_runs, ket, o::PauliSum{N,T}, H::PauliSum{N,T},
         seeds[r] = seed   
         @printf("Seed: %d  Run: %d  Samples:  %d   Time:  %12.8f ", seed, r,  res.nsamples, elapsed_time)
 
-        rRES = sum_RCt ./ n_runs
-        iRES = sum_ICt ./ n_runs
+        rRES = sum_RCt ./ r
+        iRES = sum_ICt ./ r
 
         open("/Users/admin/VSCProjects/UnitaryPruning/qDRIFT/$N-Q_signals_rep_$r.txt", "w") do io
             println(io, "- - - XXZ $N qubits output qDRIFT signals, epsilon= $eps  - - - ")
@@ -255,7 +257,13 @@ function averaged_qdrift(n_runs, ket, o::PauliSum{N,T}, H::PauliSum{N,T},
                 @printf(io, "%.4f     %.6f    %.6f\n", interval, rRES[i], iRES[i])
             end        
         end
-    end 
+    end
+    
+    println("Elapsed times") 
+    for (i,t) in enumerate(elapsed_times)
+        println(i," ", t)
+    end
+
 
     return 
 end
@@ -268,7 +276,7 @@ ket = Ket(Nqubits, 1)
 #ket, _ = string_to_ket("10000000000000000000")
 H = heisenberg_1D(Nqubits, Jx, Jy, Jz)
 t = 2.5
-eps = 2.5
+eps = 0.1
 reps = 25 
 thresh = 1e-4 # Evolution threshold for evolve
 n_meas = 100 #Number of measurements

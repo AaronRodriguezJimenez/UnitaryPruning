@@ -156,6 +156,7 @@ function evolution_op(Jx, Jy, Jz, gx, gy, gz, n_intervals, dt,
                       o::PauliSum{N}, ket;
                       thresh::Float64=1e-3) where {N}
 
+    err = Vector{Float64}([])
     Wt = deepcopy(o)        # evolve W ≡ U*OU
     W  = deepcopy(o)        # initial operator 
     nsamp = Int(n_intervals) + 1
@@ -177,29 +178,37 @@ function evolution_op(Jx, Jy, Jz, gx, gy, gz, n_intervals, dt,
     nt = length(angles)                            
     println("Total Rotations:", nt * n_intervals)
     # Evolve W under Trotterization
+
+    #accumulated_error = 0
     for ki in 1:n_intervals
             # Trotter terms U_1 U_2, ..., U_k
+            
+            WWt = W * Wt # OTOC-like product
+            accumulated_error = 0
+            e1 = expectation_value(WWt,ket)
+
             for j in 1:nt
                 # Access to the evolution of the operator by H = Sum(theta_i * P_i)
                 Pi  = generators[j]
                 #display(Pi)
                 theta = 2*dt*angles[j]
                 pb = PauliBasis(Pi)
+                
                 evolve!(Wt, pb, theta)
-            end
-            # --- POST pruning ---
-            coeff_clip!(Wt, thresh=thresh)
-            # -----------------------------
-      #  end
 
-       
-
-        WWt = W * Wt # OTOC-like product
-        expval = expectation_value(WWt, ket) # Contraction with reference ket
-        Ctreal = real(expval) # Real part of C(t) = <O(0) * (U_i^ O U_i)>
-        Ctimag = imag(expval)
-        push!(rCtvals, Ctreal)
-        push!(iCtvals, Ctimag)
+                # --- POST pruning ---
+                coeff_clip!(Wt, thresh=thresh)
+                WWt = W * Wt # OTOC-like product
+                e2 = expectation_value(WWt, ket)
+                accumulated_error += e2-e1
+            end           
+            
+            #WWt = W * Wt # OTOC-like product
+            expval = expectation_value(WWt, ket) - accumulated_error # Contraction with reference ket
+            Ctreal = real(expval) # Real part of C(t) = <O(0) * (U_i^ O U_i)>
+            Ctimag = imag(expval)
+            push!(rCtvals, Ctreal)
+            push!(iCtvals, Ctimag)
     end
 
     tgrid = collect(range(0.0, stop=n_intervals*dt, length=length(rCtvals)))
@@ -218,7 +227,7 @@ gx = 0.0
 gy = 0.0
 gz = 0.0
 g = 0.00#-0.01
-N = 4 #Total number of qubits
+N = 10 #Total number of qubits
 H = heisenberg_1D(N, Jx, Jy, Jz)
 @printf("1D-Heisenberg Hamiltonian (J= %.2f, Jz= %.2f): \n", Jx, Jz)
 display(H)
@@ -226,7 +235,7 @@ display(H)
 # Define time evolution parameters
 # Circuit divided in k layers
 # Thus total time (t) is divided in dt = t/k time intervals
-k = 100
+k = 200
 t = 2.5
 dt = t/k
 
@@ -242,11 +251,10 @@ o = PauliSum(o)
 #o += Pauli(N,X=[1,2,3,4]) #mixed signal
 #o += Pauli(N,X=[3])  #mixed signal
 # += Pauli(N,X=[2,3]) #Imaginary suppression
-
 # Call evolution_op. And get the evolved O(t) operator
 threshold = 1e-4 #pruning threshold based on coeff.
-t1 = time()
 
+t1 = time()
 rRES, iRES, tgrid = evolution_op(Jx, Jy, Jz, gx, gy, gz, k, dt, 
                                   o, ket; thresh=threshold)
 
@@ -266,7 +274,7 @@ plt = plot!(tgrid, iRES, lw=2, seriestype=:scatter,
 
 xlabel!(plt, "Time"); ylabel!(plt, "< O(0)O(t) >")
 title!(plt, "N=$N, J=$Jx, Jz=$Jz,dt=$dt")
-savefig(plt, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/20Q_QSP_XXZ.pdf")
+savefig(plt, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/$N-Q_QSP_XXZ.pdf")
 
 println("- - - Sanity Check: |C(t)|^2 - - - ")
 @printf("idx    dt     Re(C(t))    Im(C(t))   |C(t)|^2   |C(t)|\n")
@@ -280,7 +288,7 @@ println("Initial operator O:")
 display(o)
 println("Initial state |Psi0> ")
 display(ket)
-display(Vector(ket))
+#display(Vector(ket))
 
 println("- - - <0|H|0> - - - -")
 function compute_ref_expval(H, psi0)
@@ -297,22 +305,20 @@ println(ref_expval)
 
 #- - - - - PHASE CORRECTION (ONLY WHEN REF STATE IS ALSO AN EIGENSTATE) - - - - -
 # SIGNAL PROCESSING multiply by exp(-iE_0t) to correct signal
-Ek = 0.0#-8 #Eigenvalue associated to ref state in case of correction.
-signal = rRES .+ 1im * iRES;
-phase = exp.(1im * Ek .* tgrid); #-1 is the eigenvalue associated with the eigenvector (|0>)
-
+#Ek = 0.0#-8 #Eigenvalue associated to ref state in case of correction.
+#signal = rRES .+ 1im * iRES;
+#phase = exp.(1im * Ek .* tgrid); #-1 is the eigenvalue associated with the eigenvector (|0>)
 #corrected signal F(t) = exp(-iE_0t)*C(t)
-F = phase .* signal
-
+#F = phase .* signal
 # Print C(t) results
-plt2 = plot(tgrid, real(F), lw=2, seriestype=:scatter,
-          label="Re(F(t), th=$threshold")
-plt2 = plot!(tgrid, imag(F), lw=2, seriestype=:scatter,
-          label="Im(F(t), th=$threshold")
+#plt2 = plot(tgrid, real(F), lw=2, seriestype=:scatter,
+#          label="Re(F(t), th=$threshold")
+#plt2 = plot!(tgrid, imag(F), lw=2, seriestype=:scatter,
+ #         label="Im(F(t), th=$threshold")
 
-xlabel!(plt2, "Time"); ylabel!(plt2, "exp(-iE_t) * < O(0)O(t) >")
-title!(plt2, "N=$N, J=$Jx, Jz=$Jz,dt=$dt")
-savefig(plt2, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/$N-Q_QSP_XXZ_corrct.pdf")
+#xlabel!(plt2, "Time"); ylabel!(plt2, "exp(-iE_t) * < O(0)O(t) >")
+#title!(plt2, "N=$N, J=$Jx, Jz=$Jz,dt=$dt")
+#savefig(plt2, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/$N-Q_QSP_XXZ_corrct.pdf")
 
 using Printf
 
@@ -321,23 +327,10 @@ open("/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/$N-Q_signals.txt", "w")
     @printf(io, "dt   Re(C(t))    Im(C(t))   Re(F(t))    Im(F(t))\n")
 
     for (i, interval) in enumerate(tgrid)
-        normop2 = rRES[i]^2 + iRES[i]^2
-        normop = sqrt(normop2)
-
-        @printf(io, "%.4f     %.6f    %.6f    %.6f   %.6f\n",
-                interval, rRES[i], iRES[i], real(F[i]), imag(F[i]))
+        #normop2 = rRES[i]^2 + iRES[i]^2
+        #normop = sqrt(normop2)
+        @printf(io, "%.4f     %.6f    %.6f\n",
+                interval, rRES[i], iRES[i])
     end
 end
 
-plt3 = plot(tgrid, rRES, lw=2, seriestype=:scatter,
-          label="Re(C(t), th=$threshold")
-plt3 = plot!(tgrid, iRES, lw=2, seriestype=:scatter,
-          label="Im(C(t), th=$threshold")
-plt3 = plot!(tgrid, real(F), lw=2, seriestype=:scatter,
-          label="Re(F(t), th=$threshold")
-plt3 = plot!(tgrid, imag(F), lw=2, seriestype=:scatter,
-          label="Im(F(t), th=$threshold")
-
-xlabel!(plt3, "Time"); ylabel!(plt3, "exp(-iE_kt) * < O(0)O(t) >")
-title!(plt3, "Signal Comparison N=$N, J=$Jx, Jz=$Jz,dt=$dt")
-savefig(plt3, "/Users/admin/VSCProjects/UnitaryPruning/QSP_XXZ_1D/20Q_QSP_XXZ_comparison.pdf")
