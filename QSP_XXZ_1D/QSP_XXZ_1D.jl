@@ -143,6 +143,17 @@ function evolve!(O::PauliSum{N, T}, G::PauliBasis{N}, θ::Real) where {N,T}
     return O 
 end
 
+# Helper: extract PauliBasis operators and coefficients from PauliSum
+function extract_hamiltonian_coeffs_and_ops(H::PauliSum{N,T}) where {N,T}
+    ops = PauliBasis{N}[]
+    coeffs = Float64[]
+    for (p, c) in H
+        push!(ops, p)
+        push!(coeffs, float(c))
+    end
+    return ops, coeffs
+end
+
 """
 Pauli-propagation time series with pruning controls.
 Arguments:
@@ -152,14 +163,12 @@ Arguments:
 - thresh              : magnitude threshold (|coeff|)
 - n_intervals : number of intervals,  n_intervals =tot_time/dt
 """
-function evolution_op(Jx, Jy, Jz, gx, gy, gz, n_intervals, dt,
-                      o::PauliSum{N}, ket;
-                      thresh::Float64=1e-3) where {N}
+function evolution_op(ket, o::PauliSum{N,T}, H::PauliSum{N,T}, n_intervals, dt;
+                      thresh::Float64=1e-3) where {N,T}
 
-    err = Vector{Float64}([])
+    #err = Vector{Float64}([])
     Wt = deepcopy(o)        # evolve W ≡ U*OU
     W  = deepcopy(o)        # initial operator 
-    nsamp = Int(n_intervals) + 1
     rCtvals = Vector{Float64}([])#(undef, nsamp) # vector for C(t) values storing
     iCtvals = Vector{Float64}([])#(undef, nsamp)
 
@@ -173,8 +182,10 @@ function evolution_op(Jx, Jy, Jz, gx, gy, gz, n_intervals, dt,
     push!(rCtvals, C0real)
     push!(iCtvals, C0imag)
 
-    generators, angles = trott_unitary_sequence_Heisenberg(o, Jx=Jx, Jy=Jy, Jz=Jz,
-                                     gx=gx, gy=gy, gz=gz, k=1)
+    # Extract Pauli strings and coefficients
+    generators, angles = extract_hamiltonian_coeffs_and_ops(H)
+    #@printf("Hamiltonian has %d terms \n", length(coeffs))
+
     nt = length(angles)                            
     println("Total Rotations:", nt * n_intervals)
     # Evolve W under Trotterization
@@ -182,29 +193,27 @@ function evolution_op(Jx, Jy, Jz, gx, gy, gz, n_intervals, dt,
     #accumulated_error = 0
     for ki in 1:n_intervals
             # Trotter terms U_1 U_2, ..., U_k
-            
-            WWt = W * Wt # OTOC-like product
             accumulated_error = 0
-            e1 = expectation_value(WWt,ket)
 
             for j in 1:nt
                 # Access to the evolution of the operator by H = Sum(theta_i * P_i)
                 Pi  = generators[j]
-                #display(Pi)
-                theta = 2*dt*angles[j]
+                theta = 2 * dt * angles[j]
                 pb = PauliBasis(Pi)
-                
                 evolve!(Wt, pb, theta)
+                
+                coeff_clip!(Wt, thresh=1.0e-12)
+                e1 = expectation_value(W * Wt, ket)
 
                 # --- POST pruning ---
                 coeff_clip!(Wt, thresh=thresh)
-                WWt = W * Wt # OTOC-like product
-                e2 = expectation_value(WWt, ket)
+                #WWt = W * Wt 
+                e2 = expectation_value(W * Wt, ket)
                 accumulated_error += e2-e1
             end           
             
-            #WWt = W * Wt # OTOC-like product
-            expval = expectation_value(WWt, ket) - accumulated_error # Contraction with reference ket
+            WWt = W * Wt #(at time interval)
+            expval = expectation_value(WWt, ket) + accumulated_error # Contraction with reference ket
             Ctreal = real(expval) # Real part of C(t) = <O(0) * (U_i^ O U_i)>
             Ctimag = imag(expval)
             push!(rCtvals, Ctreal)
@@ -212,12 +221,9 @@ function evolution_op(Jx, Jy, Jz, gx, gy, gz, n_intervals, dt,
     end
 
     tgrid = collect(range(0.0, stop=n_intervals*dt, length=length(rCtvals)))
-
+    
     return rCtvals, iCtvals, tgrid
 end
-
-
-
 
 # Define model parameters
 Jx = 1.0
@@ -234,10 +240,10 @@ display(H)
 
 # Define time evolution parameters
 # Circuit divided in k layers
-# Thus total time (t) is divided in dt = t/k time intervals
-k = 200
-t = 2.5
-dt = t/k
+n_intervals = 100
+t = 50.0 #Total Time Evolution
+dt = t/n_intervals
+threshold = 1e-4 #pruning threshold based on coeff.
 
 # Define initial ket and Initial operator to be evolved under the circuit
 ket = Ket(N,1)
@@ -251,12 +257,10 @@ o = PauliSum(o)
 #o += Pauli(N,X=[1,2,3,4]) #mixed signal
 #o += Pauli(N,X=[3])  #mixed signal
 # += Pauli(N,X=[2,3]) #Imaginary suppression
-# Call evolution_op. And get the evolved O(t) operator
-threshold = 1e-4 #pruning threshold based on coeff.
+
 
 t1 = time()
-rRES, iRES, tgrid = evolution_op(Jx, Jy, Jz, gx, gy, gz, k, dt, 
-                                  o, ket; thresh=threshold)
+rRES, iRES, tgrid = evolution_op(ket, o, H, n_intervals, dt; thresh=threshold)
 
                                   # Code block to measure
 elapsed_time = time() - t1
