@@ -93,7 +93,7 @@ function trott_unitary_sequence_Heisenberg(o::Union{Pauli{N}, PauliSum{N}}; Jx=1
             ## z layer
             # e^{i αn (-X) / 2}
             for i in 0:N
-                Pi = Pauli(N, X=[i])
+                Pi = Pauli(N, Z=[i])
                 push!(generators, Pi)
                 push!(parameters, -1.0*gz)
             end
@@ -382,6 +382,137 @@ function evolution_op(ket, o::PauliSum{N,T}, H::PauliSum{N,T}, n_intervals, dt;
     return rCtvals, iCtvals, tgrid, snapshots
 end
 
+using Plots
+
+function plot_weight_heatmap(w_snapshots; tgrid=nothing)
+    W = hcat(w_snapshots...)   # size: (N+1) × T
+    nweights, nt = size(W)
+
+    if tgrid === nothing
+        tgrid = 0:nt-1
+    end
+
+    heatmap(
+        tgrid,
+        0:nweights-1,
+        W,
+        xlabel = "time",
+        ylabel = "Pauli weight",
+        title = "Pauli Weight Dynamics",
+        legend = false
+    )
+end
+
+function plot_weight_stack(w_snapshots; tgrid=nothing)
+    W = hcat(w_snapshots...)
+    nweights, nt = size(W)
+
+    if tgrid === nothing
+        tgrid = 0:nt-1
+    end
+
+    plt = plot(
+        xlabel = "time",
+        ylabel = "weight fraction",
+        title = "Pauli Weight Distribution",
+        legend = :right
+    )
+
+    for k in 1:nweights
+        plot!(plt, tgrid, W[k, :], label = "k=$(k-1)", lw=2)
+    end
+
+    return plt
+end
+
+function plot_dmd_modes(res::DMDResult; nmodes=4)
+    r = min(nmodes, size(res.modes, 2))
+    p = plot(
+        xlabel = "delay-embedded coordinate",
+        ylabel = "mode amplitude",
+        title = "DMD modes in delay space",
+        legend = :right
+    )
+
+    ks = 0:(size(res.modes, 1)-1)
+    for j in 1:r
+        plot!(p, ks, real(res.modes[:, j]), label = "mode $j",lw=2)
+    end
+    return p
+end
+
+function plot_dmd_modes_abs(res::DMDResult; nmodes=4)
+    r = min(nmodes, size(res.modes, 2))
+    p = plot(
+        xlabel = "delay-embedded coordinate",
+        ylabel = "|mode amplitude|",
+        title = "Magnitude of DMD modes in delay space",
+        legend = :right
+    )
+
+    ks = 0:(size(res.modes, 1)-1)
+    for j in 1:r
+        plot!(p, ks, abs.(res.modes[:, j]), label = "mode $j",lw=2)
+        println("mode $j")
+        println(res.modes[:,j])
+    end
+    return p
+end
+
+
+"""
+ Project embedded modes back to physical weight space.
+ The modes are in a delay-embedded coordinate space rather than
+ the weight space, so the following should project them back.
+"""
+function embed_snapshots(snapshots::Vector{<:AbstractVector}; q::Int=1)
+    return q == 1 ? hcat(snapshots...) : delay_embed(snapshots, q)
+end
+
+function extract_delay_blocks(mode::AbstractVector, d::Int, q::Int)
+    @assert length(mode) == d * q
+    return [mode[(j-1)*d + 1 : j*d] for j in 1:q]
+end
+
+function plot_dmd_modes_abs_delay(res::DMDResult; nmodes=4)
+    r = min(nmodes, size(res.modes, 2))
+    ks = 1:size(res.modes, 1)
+    p = plot(
+        xlabel = "delay-embedded coordinate",
+        ylabel = "|mode amplitude|",
+        title = "Magnitude of DMD modes in delay space",
+        legend = :right
+    )
+    for j in 1:r
+        plot!(p, ks, abs.(res.modes[:, j]), label = "mode $j", lw=2)
+    end
+    return p
+end
+
+function plot_dmd_mode_blocks(res::DMDResult, d::Int, q::Int; mode_index::Int=1)
+    mode = res.modes[:, mode_index]
+    blocks = extract_delay_blocks(mode, d, q)
+    weights = 0:d-1
+    p = plot(
+        xlabel = "Pauli weight",
+        ylabel = "mode amplitude",
+        title = "DMD mode $(mode_index) by delay block",
+        legend = :right
+    )
+    for j in 1:q
+        plot!(p, weights, real.(blocks[j]), label = "lag $j", lw=2)
+    end
+    return p
+end
+
+#function mean_weight(w::AbstractVector)
+#    ks = 0:length(w)-1
+#    return sum(ks .* w)
+#end
+#μs = [mean_weight(w) for w in w_snapshots]
+
+#plot(tgrid, μs, xlabel="time", ylabel="⟨weight⟩", title="Mean Pauli Weight")
+
 # Define model parameters
 Jx = 1.0
 Jy = 1.0
@@ -428,102 +559,22 @@ for snapshot in w_snapshots
     println(snapshot)
 end
 
-
 #
 #- - - Build DMD matrices
-X = hcat(w_snapshots...)   # size (N+1) x T
-#d = 50
-#X = delay_embed(w_snapshots, d)
+#X = hcat(w_snapshots...)   # size (N+1) x T
+embedding_q = 50
+X = delay_embed(w_snapshots, embedding_q)
 display(X)
 res = fit_dmd(X; r=2)    # choose a small rank to start
 print_dmd_summary(res; dt=dt)
 
-using Plots
-
-function plot_weight_heatmap(w_snapshots; tgrid=nothing)
-    W = hcat(w_snapshots...)   # size: (N+1) × T
-    nweights, nt = size(W)
-
-    if tgrid === nothing
-        tgrid = 0:nt-1
-    end
-
-    heatmap(
-        tgrid,
-        0:nweights-1,
-        W,
-        xlabel = "time",
-        ylabel = "Pauli weight",
-        title = "Pauli Weight Dynamics",
-        legend = false
-    )
-end
-
-function plot_weight_stack(w_snapshots; tgrid=nothing)
-    W = hcat(w_snapshots...)
-    nweights, nt = size(W)
-
-    if tgrid === nothing
-        tgrid = 0:nt-1
-    end
-
-    plt = plot(
-        xlabel = "time",
-        ylabel = "weight fraction",
-        title = "Pauli Weight Distribution",
-        legend = :right
-    )
-
-    for k in 1:nweights
-        plot!(plt, tgrid, W[k, :], label = "k=$(k-1)", lw=2)
-    end
-
-    return plt
-end
-
-#function mean_weight(w::AbstractVector)
-#    ks = 0:length(w)-1
-#    return sum(ks .* w)
-#end
-#μs = [mean_weight(w) for w in w_snapshots]
-
-#plot(tgrid, μs, xlabel="time", ylabel="⟨weight⟩", title="Mean Pauli Weight")
 display(plot_weight_heatmap(w_snapshots; tgrid=tgrid))
 #plot_weight_stack(w_snapshots; tgrid=tgrid)
 
-function plot_dmd_modes(res::DMDResult; nmodes=4)
-    r = min(nmodes, size(res.modes, 2))
-    p = plot(
-        xlabel = "Pauli weight",
-        ylabel = "mode amplitude",
-        title = "DMD modes in weight space",
-        legend = :right
-    )
-
-    ks = 0:(size(res.modes, 1)-1)
-    for j in 1:r
-        plot!(p, ks, real(res.modes[:, j]), label = "mode $j",lw=2)
-    end
-    return p
-end
-
-function plot_dmd_modes_abs(res::DMDResult; nmodes=4)
-    r = min(nmodes, size(res.modes, 2))
-    p = plot(
-        xlabel = "Pauli weight",
-        ylabel = "|mode amplitude|",
-        title = "Magnitude of DMD modes",
-        legend = :right
-    )
-
-    ks = 0:(size(res.modes, 1)-1)
-    for j in 1:r
-        plot!(p, ks, abs.(res.modes[:, j]), label = "mode $j",lw=2)
-        println("mode $j")
-        println(res.modes[:,j])
-    end
-    return p
-end
-
 #plot_dmd_modes(res;nmodes=4)
 display(plot_dmd_modes_abs(res;nmodes=4))
+
+d = length(w_snapshots[1])
+display(plot_dmd_modes_abs_delay(res; nmodes=4))
+display(plot_dmd_mode_blocks(res, d, embedding_q; mode_index=1))
+display(plot_dmd_mode_blocks(res, d, embedding_q; mode_index=2))
