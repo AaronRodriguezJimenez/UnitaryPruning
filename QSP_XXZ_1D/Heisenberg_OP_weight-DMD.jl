@@ -348,7 +348,7 @@ function plot_weight_heatmap(w_snapshots; tgrid=nothing)
         xlabel = "time",
         ylabel = "Pauli weight",
         title = "Pauli Weight Dynamics",
-        legend = false
+        #legend = false
     )
 end
 
@@ -364,7 +364,7 @@ function plot_weight_stack(w_snapshots; tgrid=nothing)
         xlabel = "time",
         ylabel = "weight fraction",
         title = "Pauli Weight Distribution",
-        legend = :right
+        legend = :best
     )
 
     for k in 1:nweights
@@ -375,14 +375,17 @@ function plot_weight_stack(w_snapshots; tgrid=nothing)
 end
 
 function plot_dmd_modes_abs(res::DMDResult; nmodes=4)
-    r = min(nmodes, size(res.modes, 2))
+    navailable = size(res.modes, 2)
+    r = min(nmodes, navailable)
     ks = 0:(size(res.modes, 1)-1)
+
+    println("Plotting $r modes out of $navailable available modes.")
 
     p = plot(
         xlabel = "Pauli weight",
         ylabel = "|mode amplitude|",
         title = "Magnitude of DMD modes",
-        legend = :right
+        legend = :best
     )
 
     for j in 1:r
@@ -498,7 +501,7 @@ end
 # ------------------------------------------------------------
 
 function run_threshold_sweep(ket, o, H, n_intervals, dt, thresholds::AbstractVector;
-    dmd_rank::Union{Nothing,Int}=2,
+    dmd_rank::Union{Nothing,Int}=nothing,
     verbose::Bool=true)
 
     results = Dict{Float64, SweepRun}()
@@ -509,11 +512,11 @@ function run_threshold_sweep(ket, o, H, n_intervals, dt, thresholds::AbstractVec
         end
 
         rRES, iRES, tgrid, w_snapshots = evolution_op(ket, o, H, n_intervals, dt; thresh=τ)
-        X = hcat(w_snapshots...)
-        #d = 10 #delay dimension
-        #X = delay_embed(w_snapshots, d)
+        #X = hcat(w_snapshots...)
+        d = 10 #delay dimension
+        X = delay_embed(w_snapshots, d)
  
-        dmd = fit_dmd(X; r=dmd_rank)
+        dmd = fit_dmd(X; r=nothing)
         metrics = time_series_metrics(w_snapshots)
 
         results[τ] = SweepRun(
@@ -647,7 +650,7 @@ function plot_time_traces(results::Dict{Float64, SweepRun}, baseline_threshold::
         xlabel = "time",
         ylabel = string(quantity),
         title = "Time traces across thresholds",
-        legend = :right,
+        legend = :best,
     )
 
     ref_vals = getproperty(ref, quantity)
@@ -675,7 +678,7 @@ function plot_error_traces(results::Dict{Float64, SweepRun}, comp::Dict{Float64,
         xlabel = "time",
         ylabel = string(quantity),
         title = "Error traces vs baseline",
-        legend = :right,
+        legend = :best,
     )
 
     for τ in thresholds
@@ -696,7 +699,7 @@ function plot_singular_values(results::Dict{Float64, SweepRun})
         ylabel = "singular value",
         title = "Singular value spectra",
         yscale = :log10,
-        legend = :right,
+        legend = :best,
     )
 
     for τ in thresholds
@@ -711,8 +714,8 @@ function plot_mean_weight_and_entropy(results::Dict{Float64, SweepRun}, baseline
     ref = results[baseline_threshold]
     thresholds = sort(collect(keys(results)))
 
-    p1 = plot(xlabel="time", ylabel="mean weight", title="Mean Pauli weight", legend=:right)
-    p2 = plot(xlabel="time", ylabel="entropy", title="Weight entropy", legend=:right)
+    p1 = plot(xlabel="time", ylabel="mean weight", title="Mean Pauli weight", legend=:best)
+    p2 = plot(xlabel="time", ylabel="entropy", title="Weight entropy", legend=:best)
 
     plot!(p1, ref.tgrid, ref.mean_weight, label="baseline $(baseline_threshold)", lw=3)
     plot!(p2, ref.tgrid, ref.entropy, label="baseline $(baseline_threshold)", lw=3)
@@ -750,7 +753,7 @@ function main_experiment()
 
     # Initial state/operator
     ket = Ket(N, 1)
-    o = Pauli(N, X=[3], Z=[1])
+    o = Pauli(N, X=[1])
     o = PauliSum(o)
 
     # Hamiltonian
@@ -781,15 +784,10 @@ function main_experiment()
     # Baseline-specific diagnostics
     ref = results[baseline_threshold]
     display(plot_weight_heatmap(ref.w_snapshots; tgrid=ref.tgrid))
-    display(plot_dmd_modes_abs(ref.dmd; nmodes=4))
+    display(plot_dmd_modes_abs(ref.dmd; nmodes=10))
 
     return results, comp
 end
 
 # Uncomment to run immediately in a script context:
 results, comp = main_experiment();
-
-#println("* * * RESULTS * * *")
-#println(results)
-#println("Comp:", comp)
-

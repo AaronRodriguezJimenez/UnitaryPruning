@@ -221,7 +221,7 @@ function plot_benchmark_metric(results::Vector{BenchmarkResult}; metric::Symbol=
         xlabel = "embedding q",
         ylabel = string(metric),
         title = "Takens + DMD benchmark",
-        legend = :right,
+        legend = :best,
         xscale = :linear,
     )
 
@@ -238,13 +238,13 @@ function plot_benchmark_ranks(results::Vector{BenchmarkResult})
         xlabel = "embedding q",
         ylabel = "rank for 95% energy",
         title = "Effective rank (95%)",
-        legend = :right,
+        legend = :best,
     )
     p2 = plot(
         xlabel = "embedding q",
         ylabel = "rank for 99% energy",
         title = "Effective rank (99%)",
-        legend = :right,
+        legend = :best,
     )
 
     for r in results
@@ -260,7 +260,7 @@ function plot_singular_values_vs_q(results::Vector{BenchmarkResult})
         xlabel = "embedding q",
         ylabel = "leading singular value",
         title = "Leading singular values vs embedding dimension",
-        legend = :right,
+        legend = :best,
     )
 
     for r in results
@@ -294,12 +294,11 @@ function main_benchmark()
     shuffled = shuffled_snapshots(structured; seed=4)
 
     # PP data
-    # Replace these with your current setup if needed.
     N = 6
     ket = Ket(N, 1)
     o = PauliSum(Pauli(N, X=[3], Z=[1]))
     H = heisenberg_1D(N, 1.0, 1.0, 1.0; x=0.0, y=0.0, z=0.0)
-    pp = run_pp_snapshots(ket, o, H, 100, 0.5; threshold=1e-10)
+    pp = run_pp_snapshots(ket, o, H, 250, 0.5; threshold=1e-10)
     shuffled_pp = shuffled = shuffled_snapshots(pp.w_snapshots; seed=4)
 
     # Benchmark all cases
@@ -309,7 +308,7 @@ function main_benchmark()
     push!(cases, benchmark_signal("AR(1)", ar1; q_values=q_values, r=r))
     push!(cases, benchmark_signal("shuffled synthetic", shuffled; q_values=q_values, r=r))
     push!(cases, benchmark_signal("PP weight snapshots", pp.w_snapshots; q_values=1:min(12, length(pp.w_snapshots)-1), r=r))
-    push!(cases, benchmark_signal("PP shuffled snapshots",shuffled_pp; q_values=1:min(12, length(pp.w_snapshots)-1), r=r))
+    #push!(cases, benchmark_signal("PP shuffled snapshots",shuffled_pp; q_values=1:min(12, length(pp.w_snapshots)-1), r=r))
 
     println("\n--- Summary ---")
     for c in cases
@@ -342,13 +341,21 @@ function signals()
     println("========================================")
     
     m = 250
-    labels = ["x1" "x2" "x3"] # Horizontal matrix for series labeling
+    labels = ["f1" "f2" "f3"] # Horizontal matrix for series labeling
 
     # 1. Generate Signals (Vector of 3-element Vectors)
     structured_raw = synthetic_signal(m)
     white_raw      = white_noise_signal(m, 3; seed=2)
     ar1_raw        = ar1_signal(m, 3; α=0.9, seed=3)
     shuffled_raw   = shuffled_snapshots(structured_raw; seed=4)
+    # PP data
+    labels_pp = ["w1" "w2" "w3" "w4" "w5" "w6"]
+    N = 6
+    ket = Ket(N, 1)
+    o = PauliSum(Pauli(N, X=[3], Z=[1]))
+    H = heisenberg_1D(N, 1.0, 1.0, 1.0; x=0.0, y=0.0, z=0.0)
+    pp = run_pp_snapshots(ket, o, H, 250, 0.5; threshold=1e-10)
+    #shuffled_pp = shuffled_snapshots(pp.w_snapshots; seed=4)
 
     # 2. Conversion helper 
     # Transforms Vector{Vector{Float64}} into a Matrix{Float64} of size (m, 3)
@@ -357,14 +364,17 @@ function signals()
     # 3. Plotting
     # We plot all 3 components on the same subplot for each signal type
     p1 = plot(prepare(structured_raw), title="Structured Signal", label=labels)
-    p2 = plot(prepare(white_raw),      title="White Noise",       label=false)
-    p3 = plot(prepare(ar1_raw),        title="AR(1) Process",     label=false)
-    p4 = plot(prepare(shuffled_raw),   title="Shuffled Snapshots", label=false)
+    p2 = plot(prepare(white_raw),      title="White Noise",       label=labels)
+    p3 = plot(prepare(ar1_raw),        title="AR(1) Process",     label=labels)
+    p4 = plot(prepare(shuffled_raw),   title="Shuffled Snapshots", label=labels)
+    p5 = plot(prepare(pp.w_snapshots), lw=1,
+              title="PP Weight Snapshots", label=labels_pp)
+
 
     # Combine into a 4-row stack
-    combined_plot = plot(p1, p2, p3, p4, 
-        layout=(4, 1), 
-        size=(900, 1100), 
+    combined_plot = plot(p1, p2, p3, p4, p5,
+        layout=(5, 1), 
+        size=(900, 1300), 
         link=:x,           # Links the x-axis for easier scrolling/comparison
         margin=5Plots.mm,
         ylabel="Value")
@@ -375,5 +385,5 @@ function signals()
 end
 
 # run 
-results = main_benchmark()
+main_benchmark()
 signals()

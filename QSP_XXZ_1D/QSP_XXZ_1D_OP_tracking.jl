@@ -250,7 +250,10 @@ function print_dmd_summary(res::DMDResult; dt::Real=1.0, topk::Int=5)
     growth = log.(abs.(λ)) ./ dt
     freq = angle.(λ) ./ dt
 
-    idx = sortperm(abs.(λ), rev=true)
+    # Dominant modes as those that contribute most to the reconstructed dynamics.
+    importance = [abs(res.amplitudes[j]) * norm(res.modes[:, j]) for j in 1:length(res.evals)]
+    idx = sortperm(importance, rev=true)
+    #idx = sortperm(abs.(λ), rev=true) # alternative: sort by eigenvalue magnitude
     kmax = min(topk, length(idx))
 
     println("---- DMD summary ----")
@@ -469,11 +472,6 @@ function embed_snapshots(snapshots::Vector{<:AbstractVector}; q::Int=1)
     return q == 1 ? hcat(snapshots...) : delay_embed(snapshots, q)
 end
 
-function extract_delay_blocks(mode::AbstractVector, d::Int, q::Int)
-    @assert length(mode) == d * q
-    return [mode[(j-1)*d + 1 : j*d] for j in 1:q]
-end
-
 function plot_dmd_modes_abs_delay(res::DMDResult; nmodes=4)
     r = min(nmodes, size(res.modes, 2))
     ks = 1:size(res.modes, 1)
@@ -487,6 +485,11 @@ function plot_dmd_modes_abs_delay(res::DMDResult; nmodes=4)
         plot!(p, ks, abs.(res.modes[:, j]), label = "mode $j", lw=2)
     end
     return p
+end
+
+function extract_delay_blocks(mode::AbstractVector, d::Int, q::Int)
+    @assert length(mode) == d * q
+    return [mode[(j-1)*d + 1 : j*d] for j in 1:q]
 end
 
 function plot_dmd_mode_blocks(res::DMDResult, d::Int, q::Int; mode_index::Int=1)
@@ -529,9 +532,9 @@ display(H)
 # Define time evolution parameters
 # Circuit divided in k layers
 n_intervals = 100
-t = 50.0 #Total Time Evolution
+t = 10.0 #Total Time Evolution
 dt = t/n_intervals
-threshold = 1e-6 #pruning threshold based on coeff.
+threshold = 1e-2 #pruning threshold based on coeff.
 
 # Define initial ket and Initial operator to be evolved under the circuit
 ket = Ket(N,1)
@@ -565,16 +568,110 @@ end
 embedding_q = 50
 X = delay_embed(w_snapshots, embedding_q)
 display(X)
-res = fit_dmd(X; r=2)    # choose a small rank to start
+res = fit_dmd(X; r=nothing)    # choose a small rank to start
 print_dmd_summary(res; dt=dt)
 
-display(plot_weight_heatmap(w_snapshots; tgrid=tgrid))
+#display(plot_weight_heatmap(w_snapshots; tgrid=tgrid))
 #plot_weight_stack(w_snapshots; tgrid=tgrid)
 
 #plot_dmd_modes(res;nmodes=4)
-display(plot_dmd_modes_abs(res;nmodes=4))
+#display(plot_dmd_modes_abs(res;nmodes=4))
 
-d = length(w_snapshots[1])
-display(plot_dmd_modes_abs_delay(res; nmodes=4))
-display(plot_dmd_mode_blocks(res, d, embedding_q; mode_index=1))
-display(plot_dmd_mode_blocks(res, d, embedding_q; mode_index=2))
+d = length(w_snapshots[1]) 
+println("d = ", d, " embedding q = ", embedding_q)
+display(plot_dmd_modes_abs_delay(res; nmodes=1))
+#display(plot_dmd_mode_blocks(res, d, embedding_q; mode_index=1))
+#println("Mode 1:")
+#println(res.modes[:,1])
+#println("Dimension of mode: ", length(res.modes[:,1]))
+#display(plot_dmd_mode_blocks(res, d, embedding_q; mode_index=2))
+
+function extract_delay_blocks(mode::AbstractVector, d::Int, q::Int)
+    @assert length(mode) == d * q "mode length must equal d*q"
+    return [mode[(j - 1) * d + 1 : j * d] for j in 1:q]
+end
+
+function mode_block_matrix(mode::AbstractVector, d::Int, q::Int)
+    @assert length(mode) == d * q "mode length must equal d*q"
+    return reshape(mode, d, q)
+end
+
+function physical_mode_profile(mode::AbstractVector, d::Int, q::Int; method::Symbol=:envelope)
+    M = mode_block_matrix(mode, d, q)
+
+    if method == :first
+        return abs.(M[:, 1])
+    elseif method == :mean
+        return vec(mean(abs.(M), dims=2))
+    elseif method == :envelope
+        return vec(sqrt.(sum(abs2, M; dims=2)))
+    else
+        error("Unknown method = $method. Use :first, :mean, or :envelope.")
+    end
+end
+
+function plot_dmd_mode_profile(res::DMDResult, d::Int, q::Int; mode_index::Int=1, method::Symbol=:envelope)
+    mode = res.modes[:, mode_index]
+    prof = physical_mode_profile(mode, d, q; method=method)
+    weights = 0:d-1
+
+    p = plot(
+        weights,
+        prof,
+        xlabel="Pauli weight",
+        ylabel="mode amplitude",
+        title="DMD mode $(mode_index) in physical space ($(method))",
+        lw=2,
+        label=false
+    )
+    return p
+end
+
+function plot_dmd_mode_blocks_heatmap(res::DMDResult, d::Int, q::Int; mode_index::Int=1, use_abs::Bool=true)
+    mode = res.modes[:, mode_index]
+    M = mode_block_matrix(mode, d, q)
+
+    Z = use_abs ? abs.(M) : real.(M)
+
+    heatmap(
+        1:q,
+        0:d-1,
+        Z,
+        xlabel="delay block",
+        ylabel="Pauli weight",
+        title="DMD mode $(mode_index) across delay blocks",
+        colorbar_title = use_abs ? "|amplitude|" : "Re(amplitude)"
+    )
+end
+
+display(plot_dmd_mode_profile(res, d, embedding_q; mode_index=23, method=:first))
+display(plot_dmd_mode_profile(res, d, embedding_q; mode_index=21, method=:first))
+display(plot_dmd_mode_profile(res, d, embedding_q; mode_index=25, method=:first))
+display(plot_dmd_mode_profile(res, d, embedding_q; mode_index=37, method=:first))
+display(plot_dmd_mode_profile(res, d, embedding_q; mode_index=25, method=:first))
+#display(plot_dmd_mode_profile(res, d, embedding_q; mode_index=1, method=:mean))
+#display(plot_dmd_mode_profile(res, d, embedding_q; mode_index=1, method=:envelope))
+#display(plot_dmd_mode_blocks_heatmap(res, d, embedding_q; mode_index=1, use_abs=true))
+
+function plot_dmd_modes_profile_overlay(res::DMDResult, d::Int, q::Int;
+    mode_indices::Vector{Int},
+    method::Symbol=:first
+)
+    weights = 0:d-1
+
+    p = plot(
+        xlabel="Pauli weight",
+        ylabel="mode amplitude",
+        title="Selected DMD modes ($(method))",
+        legend=:best,
+        lw=2
+    )
+
+    for j in mode_indices
+        mode = res.modes[:, j]
+        prof = physical_mode_profile(mode, d, q; method=method)
+        plot!(p, weights, prof, label="mode $j")
+    end
+
+    return p
+end
