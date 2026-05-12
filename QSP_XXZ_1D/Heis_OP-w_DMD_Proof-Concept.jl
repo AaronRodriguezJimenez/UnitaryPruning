@@ -889,6 +889,6 @@ function reconstructions_thresh_compare(;
     return results, plt
 end
 
-#main_poc(q=50, r=nothing);
-#reconstructions_q_compare(r=nothing);
+main_poc(q=50, r=nothing);
+reconstructions_q_compare(r=nothing);
 #reconstructions_thresh_compare(q=50, r=nothing);
