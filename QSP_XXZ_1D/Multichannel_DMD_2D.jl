@@ -30,6 +30,67 @@ neighbor(site::Int, N::Int) = site == N ? 1 : site + 1
 # ------------------------------------------------------------
 # Hamiltonian
 # ------------------------------------------------------------
+function rectanglebricktopology(nx::Integer, ny::Integer)
+    # LinearIndices automatically maps (x, y) coordinates to flat 1D indices
+    LI = LinearIndices((nx, ny))
+
+    # Layer A: Horizontal edges starting at odd columns (1, 3, 5...)
+    layer_A = [(LI[x, y], LI[x+1, y]) for x in 1:2:(nx-1) for y in 1:ny]
+
+    # Layer B: Horizontal edges starting at even columns (2, 4, 6...)
+    layer_B = [(LI[x, y], LI[x+1, y]) for x in 2:2:(nx-1) for y in 1:ny]
+
+    # Layer C: Vertical edges starting at odd rows (1, 3, 5...)
+    layer_C = [(LI[x, y], LI[x, y+1]) for x in 1:nx for y in 1:2:(ny-1)]
+
+    # Layer D: Vertical edges starting at even rows (2, 4, 6...)
+    layer_D = [(LI[x, y], LI[x, y+1]) for x in 1:nx for y in 2:2:(ny-1)]
+
+    # Concatenate the sublayers into a single continuous Vector
+    return vcat(layer_A, layer_B, layer_C, layer_D)
+end
+
+function get_ordered_generators(Nx, Ny, J, h)
+    N = Nx * Ny
+    generators = []
+    angles = []
+
+    topology = rectanglebricktopology(Nx, Ny)
+
+    # 1. ZZ Interactions (ordered strictly by brick topology layers)
+    for (i, j) in topology
+        push!(generators, PauliBasis(Pauli(N, Z=[i, j])))
+        push!(angles, J) # Keeping the J/4 scaling from your previous convention
+    end
+
+    # 2. Transverse Field (X on all sites)
+    for i in 1:N
+        push!(generators, PauliBasis(Pauli(N, X=[i])))
+        push!(angles, h) # Keeping the h/2 scaling
+    end
+
+    return generators, angles
+end
+
+function Ising_rectangle(Nx, Ny, J, h)
+    N = Nx * Ny
+    H = PauliSum(N, Float64)
+
+    topology = rectanglebricktopology(Nx, Ny)
+
+    # 1. ZZ Interactions (ordered strictly by brick topology layers)
+    for (i, j) in topology        
+        H += -J * Pauli(N, Z=[i, j])
+    end
+
+    # 2. Transverse Field (X on all sites)
+    for i in 1:N
+        H += h * Pauli(N, X=[i])
+    end
+
+    return H
+end
+
 
 function heisenberg_1D(N, Jx, Jy, Jz; x=0.0, y=0.0, z=0.0)
     H = PauliSum(N, Float64)
@@ -260,6 +321,7 @@ function snapshots_to_matrix(snapshots::AbstractVector)
     X = reduce(hcat, snapshots)'   # rows = channels, cols = time
     return X
 end
+
 """
 Build Takens-embedded multichannel Hankel matrices.
 
@@ -395,6 +457,52 @@ function print_multichannel_dmd_summary(res::MultiChannelDMDResult; topk::Int = 
         @printf("    growth    = %.6f\n", growth[i])
         @printf("    frequency = %.6f\n", freq[i])
         @printf("    amplitude = %s\n", string(amp[i]))
+    end
+end
+
+function print_dmd_summary(
+    res::MultiChannelDMDResult;
+    topk::Int = 6,
+    nsnapshots::Int          # number of time snapshots used in the reconstruction
+)
+    λ = res.evals
+    b = res.amplitudes
+    dt = res.dt
+
+    growth = log.(abs.(λ)) ./ dt
+    freq   = angle.(λ) ./ dt
+
+    modes = res.modes
+    nsnapshots
+
+    mode_norms = map(norm, eachcol(modes))
+
+    scores = zeros(Float64, length(λ))
+    for i in eachindex(λ)
+        r = abs(λ[i])^2
+        geom_sum = isapprox(r, 1.0; atol=1e-12) ? nsnapshots :
+                   (1 - r^nsnapshots) / (1 - r)
+        scores[i] = abs2(b[i]) * mode_norms[i]^2 * geom_sum
+    end
+
+    idx = sortperm(scores, rev=true)
+
+    println("---- Multichannel DMD summary ----")
+    println("delay embedding q = ", res.delay)
+    println("relative LS residual = ", res.residual_rel)
+    println("top singular values = ", res.singular_values[1:min(topk, length(res.singular_values))])
+
+    println("\nDominant modes by contribution score:")
+    for j in 1:min(topk, length(idx))
+        i = idx[j]
+        @printf("  mode %d\n", i)
+        @printf("    score     = %.6e\n", scores[i])
+        @printf("    λ         = %s\n", string(λ[i]))
+        @printf("    |λ|       = %.6f\n", abs(λ[i]))
+        @printf("    growth    = %.6f\n", growth[i])
+        @printf("    frequency = %.6f\n", freq[i])
+        @printf("    amplitude = %s\n", string(b[i]))
+        @printf("    ||phi||   = %.6e\n", mode_norms[i])
     end
 end
 
@@ -760,39 +868,113 @@ function plot_mode_weight_participation(
     )
 end
 
+function print_weight_channels(res, N; digits=6)
+    channels = res.snapshots[1:N, :]
+    tgrid = res.tgrid
+
+    # Header
+    @printf("%12s", "time")
+    for w in 0:N-1
+        @printf("%12s", "w$w")
+    end
+    println()
+
+    # Rows
+    for t in eachindex(tgrid)
+        @printf("%12.*f", digits, tgrid[t])
+
+        for w in 1:N
+            @printf("%12.*f", digits, channels[w, t])
+        end
+
+        println()
+    end
+end
+
 function plot_weight_channels(res, N)
-    channels = res.snapshots[1:7, :]' # Extract first 7 channels and transpose
-    labels = reshape(["weight $i" for i in 0:N], 1, :) # Create labels dynamically
+    channels = res.snapshots[1:N, :]' # Extract first 7 channels and transpose
+    labels = reshape(["Weight $i" for i in 0:N], 1, :) # Create labels dynamically
 
     plot(
         res.tgrid,
         channels,
         label=labels,
         xlabel="time",
-        ylabel="Real coefficient",
+        ylabel="L2-norm",
         title="PP weight channels over time",
-        lw=2
+        lw=2.5,
+        xtickfontsize=20,
+        ytickfontsize=20,
+        guidefontsize=20,
+        left_margin = 15Plots.mm,
+        top_margin = 10Plots.mm,
+        dpi = 300,
+        legend=:best,
+        size=(800, 800),
+
     )
+end
+
+using Plots
+
+function plot_dmd_eigs_on_unit_circle(λ; scores=nothing, topk=6, title_str="DMD Eigenvalues")
+    θ = range(0, 2π; length=400)
+
+    p = scatter(
+        real.(λ),
+        imag.(λ),
+        aspect_ratio = :equal,
+        xlabel = "Re(λ)",
+        ylabel = "Im(λ)",
+        title = title_str,
+        label = "DMD eigenvalues",
+        markerstrokewidth = 0,
+        markersize = 6,
+        zcolor = scores,
+        colorbar = scores === nothing ? false : true,
+    )
+
+    plot!(p, cos.(θ), sin.(θ), label = "unit circle", linewidth = 2)
+
+    if scores !== nothing
+        idx = sortperm(scores, rev=true)[1:min(topk, length(λ))]
+        for i in idx
+            annotate!(p, real(λ[i]), imag(λ[i]), text("$(i)", 8))
+        end
+    end
+
+    return p
 end
 
 # = = =. = = = = =. = === = = == = =. = = = = =. = = = = = = =
 #Hamiltonian and initial operator for testing
-N = 6
-Jx = 0.10
-Jy = 0.10
-Jz = 1.0
+#N = 6
+#Jx = 0.10
+#Jy = 0.10
+#Jz = 1.0
+#ket = Ket(N, 1)
+#o = PauliSum(Pauli(N, X=[1]))
+#H = heisenberg_1D(N, Jx, Jy, Jz)
+
+
+Nx = 3
+Ny = 3
+N= Nx * Ny
+J = 1.0
+h = 1.5
+H = Ising_rectangle(Nx, Ny, J, h)
+
+c_ind = (Nx ÷ 2 + 1) + (Ny ÷ 2) * Nx
+o = PauliSum(Pauli(N, Z = [c_ind])) #Z_init
+ket = Ket(N, 0)
+
+Hcache = extract_coeffs_and_ops(H)
 
 total_time = 10.0
 dt = 0.1 #total_time / n_intervals
 n_intervals = total_time / dt |> Int
-
-ket = Ket(N, 1)
-o = PauliSum(Pauli(N, X=[1]))
-H = heisenberg_1D(N, Jx, Jy, Jz)
-
-Hcache = extract_coeffs_and_ops(H)
-
 thresh = 1e-4
+
 # kind keys: :l2, :abs, :real, :imag, :complex determine what we track in the channels. 
 res = channel_evolution(ket, o, Hcache, n_intervals, dt; thresh=thresh, kind=:l2,
                         normalize=false, track_corr=false)
@@ -805,7 +987,7 @@ display(res.snapshots)
 # Get channels for plotting
 # Extract the first 7 channels and transpose so time is rows, 
 # weights are columns
-channels = res.snapshots[1:7, :]'
+channels = res.snapshots[1:N+1, :]'
 
 #println(length(channels))
 #println("Channel for weight 1: ", channels[:, 2])
@@ -816,8 +998,8 @@ channels = res.snapshots[1:7, :]'
 # the following will compose the snapshots that will form matrix X
 snaps1 = channels[:, 2]' #weight 1
 snaps2 = channels[:, 4]' #weight 3
-snaps6 = channels[:, 7]' #weight 6
-labels = ["w1", "w3", "w6"]
+snaps6 = channels[:, 5]' #weight 4
+labels = ["w1", "w3", "w4"]
 
 println("Snapshots for channel 1:")
 display(snaps1')
@@ -825,7 +1007,8 @@ snaps = [snaps1', snaps2', snaps6']
 S = snapshots_to_matrix(snaps)
 println("S matrix size = ", size(S))
 display(S)
-d= 15 #delay
+
+d= 50 #delay
 Xp, X = build_multichannel_hankel(S, d)
 println("RHS size: ", size(Xp))
 display(Xp)
@@ -841,10 +1024,12 @@ dmd = fit_multichannel_dmd(snaps, delay=d, r=nothing,
                            dt=dt, channel_names=labels)
 
 
-
+display(plot_dmd_eigs_on_unit_circle(dmd.evals))
 print_multichannel_dmd_summary(dmd; topk=10)
+print_dmd_summary(dmd; topk=10, nsnapshots=size(S, 2) - d)
 
-display(plot_weight_channels(res, N))
+display(plot_weight_channels(res, N+1))
+print_weight_channels(res, N+1; digits=6)
 #display(plot_multichannel_heatmap(snaps, channel_labels=labels))
 #display(plot_dmd_mode_shapes(dmd; nmodes=4))
 display(plot_operator_matrix(A_ls, 3, d))
