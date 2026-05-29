@@ -798,98 +798,26 @@ function plot_mode_blocks(
     )
 end
 
-"""
-Plot the first nmodes DMD modes as block heatmaps.
-"""
-function plot_dmd_modes_blocks(
-    res,
-    I::Int,
-    d::Int;
-    mode_ids::AbstractVector{<:Integer} = 1:min(4, size(res.modes, 2)),
-    kind::Symbol = :abs,
-    channel_labels = nothing,
-    delay_labels = nothing,
-)
-
-    mode_ids = collect(mode_ids)
-    @assert all(1 .<= mode_ids .<= size(res.modes, 2)) "mode_ids out of range"
-
-    plots = []
-
-    for j in mode_ids
-        p = plot_mode_blocks(
-            view(res.modes, :, j),
-            I,
-            d;
-            kind = kind,
-            channel_labels = channel_labels,
-            delay_labels = delay_labels,
-            title = "Mode $j, λ=$(round(res.evals[j], digits=3))",
-        )
-        push!(plots, p)
-    end
-
-    return plot(
-        plots...,
-        layout = (length(mode_ids), 1),
-        size = (900, 250 * length(mode_ids)),
-    )
-end
-
-"""
-Plot participation by weight sector for one mode:
-    participation[w] = sum over delays |mode[w, delay]|^2
-"""
-function plot_mode_weight_participation(
-    mode::AbstractVector,
-    I::Int,
-    d::Int;
-    channel_labels = nothing,
-    title::String = "Mode participation by weight sector",
-)
-
-    M = reshape_mode_blocks(mode, I, d)
-    participation = vec(sum(abs2, M; dims=2))
-
-    if channel_labels === nothing
-        channel_labels = ["w$(i-1)" for i in 1:I]
-    end
-
-    bar(
-        1:I,
-        participation,
-        xlabel = "weight sector",
-        ylabel = "∑delay |amplitude|²",
-        title = title,
-        xticks = (1:I, channel_labels),
-        legend = false,
-        framestyle = :box,
-        dpi = 300,
-    )
-end
-
-function print_weight_channels(res, N; digits=6, filename="weight_channels.txt")
+function print_weight_channels(res, N; digits=6)
     channels = res.snapshots[1:N, :]
     tgrid = res.tgrid
 
-    open(filename, "w") do io
-        # Header
-        @printf(io, "%12s", "time")
-        for w in 0:N-1
-            @printf(io, "%12s", "w$w")
+    # Header
+    @printf("%12s", "time")
+    for w in 0:N-1
+        @printf("%12s", "w$w")
+    end
+    println()
+
+    # Rows
+    for t in eachindex(tgrid)
+        @printf("%12.*f", digits, tgrid[t])
+
+        for w in 1:N
+            @printf("%12.*f", digits, channels[w, t])
         end
-        println(io)
 
-        # Rows
-        for t in eachindex(tgrid)
-            @printf(io, "%12.*f", digits, tgrid[t])
-
-            for w in 1:N
-                @printf(io, "%12.*f", digits, channels[w, t])
-            end
-
-            println(io)
-        end
+        println()
     end
 end
 
@@ -963,7 +891,7 @@ Nx = 3
 Ny = 3
 N= Nx * Ny
 J = 1.0
-h = 0.1
+h = 0.25
 H = Ising_rectangle(Nx, Ny, J, h)
 
 c_ind = (Nx ÷ 2 + 1) + (Ny ÷ 2) * Nx
@@ -986,77 +914,26 @@ res = channel_evolution(ket, o, Hcache, n_intervals, dt; thresh=thresh, kind=:l2
 println("snapshots size = ", size(res.snapshots))
 display(res.snapshots)
 
-# Get channels for plotting
-# Extract the first 7 channels and transpose so time is rows, 
-# weights are columns
-channels = res.snapshots[1:N+1, :]'
+S = res.snapshots
+t = res.tgrid
 
-#println(length(channels))
-#println("Channel for weight 1: ", channels[:, 2])
-#println("Channel for weight 2: ", channels[:, 3])
-#println("Channel for weight 6: ", channels[:, 7])
+n_weights, n_times = size(S)
+weights = 0:(n_weights - 1)
 
-#Inspect Multichannel DMD on the first 3 channels (weights 0, 1, 2)
-# the following will compose the snapshots that will form matrix X
-snaps1 = channels[:, 2]' #weight 1
-snaps2 = channels[:, 3]' #weight 2
-snaps3 = channels[:, 4]' #weight 3
-snaps4 = channels[:, 5]' #weight 4
-snaps5 = channels[:, 6]' #weight 5
-snaps6 = channels[:, 7]' #weight 6
-snaps7 = channels[:, 8]' #weight 7
-snaps8 = channels[:, 9]' #weight 8
-snaps9 = channels[:, 10]' #weight 9
+ymax = maximum(S) * 1.05
 
-labels = ["w1", "w2", "w3", "w4", "w5", "w6", "w7", "w8", "w9"]
+anim = @animate for k in 1:n_times
+    bar(
+        weights,
+        S[:, k],
+        xlabel = "Pauli weight",
+        ylabel = "channel value",
+        title = @sprintf("Weight profile at t = %.4f", t[k]),
+        legend = false,
+        ylim = (0, ymax),
+        xlim = (minimum(weights) - 0.5, maximum(weights) + 0.5),
+        size = (800, 500),
+    )
+end
 
-println("Snapshots for channel 1:")
-display(snaps1')
-snaps = [snaps1', snaps2', snaps3', snaps4', snaps5', 
-         snaps6', snaps7', snaps8', snaps9']
-
-         S = snapshots_to_matrix(snaps)
-println("S matrix size = ", size(S))
-display(S)
-
-d= 250 #delay
-Xp, X = build_multichannel_hankel(S, d)
-println("RHS size: ", size(Xp))
-display(Xp)
-println("LHS size: ", size(X))
-display(X)
-
-# Full least-squares operator in embedded space
-A_ls = Matrix(Xp * pinv(X))
-println("System Matrix A_ls size: ", size(A_ls))
-display(A_ls)
-
-dmd = fit_multichannel_dmd(snaps, delay=d, r=nothing,
-                           dt=dt, channel_names=labels)
-
-
-# - - -  VISUALIZATION CHECKS - - -                           
-display(plot_dmd_eigs_on_unit_circle(dmd.evals))
-
-print_multichannel_dmd_summary(dmd; topk=10)
-
-print_dmd_summary(dmd; topk=10, nsnapshots=size(S, 2) - d)
-
-display(plot_weight_channels(res, N+1))
-
-print_weight_channels(res, N+1; digits=6) #Save in file snapshot values for each weight channel
-
-display(plot_multichannel_heatmap(snaps, channel_labels=labels))
-
-#display(plot_dmd_mode_shapes(dmd; nmodes=4))
-
-#display(plot_operator_matrix(A_ls, 9, d))
-
-#display(plot_dmd_modes_blocks(dmd, 9, d;  mode_ids=[32, 28, 29, 27, 26], 
-#                              channel_labels=labels, kind=:abs))
-
-#display(plot_mode_weight_participation(view(dmd.modes, :, 32), 9, d,
-#                            channel_labels=labels))
-
-#display(plot_mode_blocks(view(dmd.modes, :, 32), 9, d; kind=:abs, 
-#                          channel_labels=labels))
+gif(anim, "channel_weights.gif", fps = 20)

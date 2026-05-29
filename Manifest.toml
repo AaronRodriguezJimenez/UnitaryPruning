@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.9"
+julia_version = "1.11.6"
 manifest_format = "2.0"
-project_hash = "b6270425e35cf583329c8d07af9af71216d3ed0d"
+project_hash = "267b0f5ab2d644929fe4931638375f9f4b130679"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "bbc22a9a08a0ef6460041086d8a7b27940ed4ffd"
@@ -1027,11 +1027,11 @@ version = "2.8.4"
 
 [[deps.PauliOperators]]
 deps = ["BenchmarkTools", "LinearAlgebra", "Printf", "Random", "StaticArrays"]
-git-tree-sha1 = "779f0355990c3e2285a12069e73d3559375c3a96"
-repo-rev = "main"
+git-tree-sha1 = "65dec315e9caa08e7701a475aba5e05d5e2c7e46"
+repo-rev = "v3-dev"
 repo-url = "https://github.com/nmayhall/PauliOperators.jl.git"
 uuid = "be646426-f34c-4536-b1d4-a45a9633e6db"
-version = "2.0.0"
+version = "3.0.0"
 
 [[deps.Pixman_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "LLVMOpenMP_jll", "Libdl"]
